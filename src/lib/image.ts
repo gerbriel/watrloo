@@ -63,21 +63,18 @@ function dimensions(source: ImageBitmap | HTMLImageElement) {
 /**
  * Downscale to fit MAX_EDGE and re-encode as WebP.
  *
- * Re-encoding through a canvas also strips EXIF — including the GPS
- * coordinates phones embed by default. A bathroom photo carrying the
- * uploader's exact location is a real privacy leak, so this is load-bearing,
- * not incidental. (Orientation is applied during decode, so the visible
- * rotation survives even though the EXIF tag does not.)
+ * Re-encoding through a canvas strips EXIF — including the GPS coordinates
+ * phones embed by default. A bathroom photo carrying the uploader's exact home
+ * or workplace location is a real privacy leak, so the re-encode is
+ * load-bearing rather than incidental. (Orientation is applied during decode,
+ * so the visible rotation survives even though the EXIF tag does not.)
  *
- * Returns the original file untouched if it is already small and in an
- * accepted format — no point re-encoding a 40KB thumbnail.
+ * Consequently there is NO "it's already small enough, pass it through"
+ * shortcut: a 400KB JPEG straight off a phone is small *and* full of GPS. Every
+ * file is re-encoded, and we never fall back to returning the caller's original
+ * File object.
  */
 export async function compressImage(file: File): Promise<File> {
-  const alreadyFine =
-    file.size <= 600 * 1024 &&
-    (ACCEPTED_TYPES as readonly string[]).includes(file.type);
-  if (alreadyFine) return file;
-
   const source = await decode(file);
   const { width, height } = dimensions(source);
   if (!width || !height) throw new Error('Could not read that image.');
@@ -100,10 +97,10 @@ export async function compressImage(file: File): Promise<File> {
   if (!blob || blob.size > file.size) {
     blob = await canvasToBlob(canvas, 'image/jpeg', QUALITY);
   }
+  // Failing closed matters here: returning `file` on error would upload the
+  // untouched original, EXIF and all. The caller surfaces this as a per-file
+  // message and drops the photo.
   if (!blob) throw new Error('Could not process that image.');
-
-  // If our best effort is still bigger than the original, keep the original.
-  if (blob.size >= file.size) return file;
 
   const ext = blob.type === TARGET_TYPE ? 'webp' : 'jpg';
   const base = file.name.replace(/\.[^.]+$/, '') || 'photo';

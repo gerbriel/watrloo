@@ -4,6 +4,24 @@ Adversarial review of the data layer. Scope: `supabase/migrations/20260710000000
 `supabase/config.toml`, `src/lib/api/*.ts`, `src/lib/supabase.ts`, `src/auth/AuthProvider.tsx`,
 `.env.example`, `.gitignore`.
 
+> ## Remediation status
+>
+> This audit was written against the **first** migration. Several findings have
+> since been fixed in `supabase/migrations/20260710010000_search_geo_privacy.sql`.
+> The analysis below is preserved as originally written; **this table is
+> authoritative for current state.**
+>
+> | ID | Finding | Status |
+> | --- | --- | --- |
+> | F1 | Username falls back to email local part | **Fixed** — opaque `user_<hex>`; the email is never read |
+> | F2 | `review_photos.storage_path` unconstrained | **Fixed** — insert policy now requires the caller's `<uid>/` prefix |
+> | F3 | No DELETE policy, no moderator role | **Open** — design in `USERS_AND_ROLES.md`, not applied |
+> | F4 | Username collision TOCTOU | **Fixed** — insert-and-retry on `unique_violation` (5 attempts) |
+> | F5 | NULL email skips the length guard | **Fixed** — `coalesce` before `char_length` |
+> | F6 | Search term unbounded; `%`/`_` not neutralized | **Fixed** — replaced by the `search_bathrooms` RPC: bound parameter, term clamped to 100 chars, LIKE metacharacters escaped |
+> | F7 | Unvalidated `avatar_url` | **Open** |
+> | F8 / F9 | Public review-history correlation; no storage UPDATE policy | **Accepted by design** (see notes below) |
+
 Threat model: the repo is **public** and the anon (publishable) key ships in the browser bundle
 **by design**. Any attacker therefore has the anon key and can call PostgREST (`/rest/v1`),
 GraphQL (`/graphql/v1`), Storage, and Auth directly — not just through the app UI. Every control

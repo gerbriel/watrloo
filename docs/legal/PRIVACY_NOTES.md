@@ -1,5 +1,20 @@
 # Watrloo — Privacy & Compliance Notes
 
+> ## Remediation status
+>
+> The code audit below was performed before the map migration and the second
+> database migration landed. **Three of the six defects are already fixed**; the
+> analysis is preserved as written, but this table is authoritative.
+>
+> | ID | Defect | Status |
+> | --- | --- | --- |
+> | D1 | Username derived from the email local part | **Fixed** — opaque fallback in `handle_new_user` |
+> | D2 | Photos uploaded with EXIF (incl. GPS) intact | **Fixed** — `compressImage()` re-encodes via canvas before upload, which strips all metadata |
+> | D3 | Public, correlatable per-user review history | **Open by design** — inherent to a public directory; disclosed in the policy |
+> | D4 | Map leaked user IPs to the OpenStreetMap tile CDN | **Fixed** — replaced with a self-hosted PMTiles basemap; no third-party request remains |
+> | D5 | Account deletion orphans storage objects | **Open** — no account-deletion flow exists yet |
+> | D6 | Public photo path embeds the uploader's uid | **Open** (low) |
+
 > # ⚠️ NOT LEGAL ADVICE — HAVE A LAWYER REVIEW THIS
 >
 > This document was written by an engineering assistant, not an attorney. It is a
