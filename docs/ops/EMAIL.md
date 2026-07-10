@@ -9,6 +9,51 @@
 
 ---
 
+## 0. Status — Resend, tested against the live API (2026-07-10)
+
+Resend was chosen and an API key issued. It was exercised directly. **It cannot
+serve signups yet**, for a reason that has nothing to do with Supabase:
+
+| Check | Result |
+| --- | --- |
+| API key valid (`GET /domains`) | **200 OK** |
+| Verified domains on the account | **none** |
+| Send from `onboarding@resend.dev` → the account owner | **200**, delivered |
+| Send from `onboarding@resend.dev` → any other recipient | **403 `validation_error`** |
+
+The 403 body:
+
+> *"You can only send testing emails to your own email address (`<account
+> owner>`). To send emails to other recipients, please verify a domain at
+> resend.com/domains, and change the `from` address."*
+
+**Consequence.** If custom SMTP were pointed at Resend today, Supabase would hand
+every confirmation email to the API and Resend would reject all of them except
+those addressed to the account owner. Signup would appear to work for exactly one
+person. That is strictly worse than the current failure, because it fails
+silently per-recipient instead of loudly at the quota.
+
+**Therefore, in order:**
+
+1. **Verify a domain** at <https://resend.com/domains> and add its SPF/DKIM/DMARC
+   records at your DNS host. Without an owned domain, nothing else in this
+   document delivers mail to real users.
+2. Set the sender to an address on that domain, e.g. `no-reply@yourdomain`.
+3. Configure Supabase SMTP (§5): host `smtp.resend.com`, port `465` (implicit
+   TLS) or `587` (STARTTLS), username **`resend`**, password **the API key**.
+4. Leave confirmation **ON** once real mail is flowing.
+
+Until step 1 is done, turning confirmation **off** is the only way signup works
+for anybody but the account owner.
+
+> **The API key is a secret.** It belongs in the Supabase dashboard, or in an env
+> var for `scripts/configure-auth.sh` — never in this repo and never in
+> `.env.local`, because Vite inlines `VITE_`-prefixed variables into the client
+> bundle and this key must never reach a browser. Rotate it if it has ever been
+> pasted into a chat, a terminal transcript, or an issue.
+
+---
+
 ## 1. The verified problem
 
 The hosted project (`riylggdmveqwglqilwhl`) has **email confirmation ON**. Signup calls Supabase's **built-in** email sender, which is capped at **2 emails per hour, project-wide**. A live signup attempt returned:
