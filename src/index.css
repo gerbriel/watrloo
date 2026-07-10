@@ -1,8 +1,8 @@
 @import 'tailwindcss';
 
-/* Watrloo design tokens. Porcelain + a cool "flush" blue.
-   Every color is declared for both schemes; the `data-theme` attribute wins
-   over the media query so an explicit toggle always beats the OS preference. */
+/* Watrloo design tokens. Porcelain + a cool "flush" blue, with a cyan accent
+   for gradients. Every color is declared for both schemes; the `data-theme`
+   attribute wins over the media query so an explicit toggle beats the OS. */
 @theme {
   --color-porcelain-50: #f6f9fb;
   --color-porcelain-100: #eaf1f6;
@@ -20,44 +20,66 @@
   --color-flush-500: #0ea5e9;
   --color-flush-600: #0284c7;
 
+  --color-cyan-300: #67e8f9;
+  --color-cyan-400: #22d3ee;
+  --color-cyan-500: #06b6d4;
+
   --color-star: #f5a524;
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', sans-serif;
+  --font-display: 'Space Grotesk Variable', 'Inter Variable', ui-sans-serif,
+    system-ui, sans-serif;
 }
 
 @layer base {
   :root {
     --surface: #ffffff;
     --surface-raised: var(--color-porcelain-50);
+    --surface-sunken: #eef3f7;
     --border: var(--color-porcelain-200);
+    --border-strong: var(--color-porcelain-300);
     --text: var(--color-porcelain-950);
     --text-muted: var(--color-porcelain-600);
+    /* Ambient hero glow tint, per-scheme so it reads on white and near-black. */
+    --glow: 14 165 233; /* flush-500 */
+    --glow-2: 6 182 212; /* cyan-500 */
+    --glow-alpha: 0.1;
   }
 
   @media (prefers-color-scheme: dark) {
     :root {
-      --surface: var(--color-porcelain-950);
-      --surface-raised: var(--color-porcelain-900);
-      --border: var(--color-porcelain-800);
-      --text: var(--color-porcelain-50);
-      --text-muted: var(--color-porcelain-300);
+      --surface: #080c14;
+      --surface-raised: #111927;
+      --surface-sunken: #0c111b;
+      --border: #1e2a3c;
+      --border-strong: #2b3b52;
+      --text: #eef4f9;
+      --text-muted: #93a7bd;
+      --glow-alpha: 0.16;
     }
   }
 
   :root[data-theme='light'] {
     --surface: #ffffff;
     --surface-raised: var(--color-porcelain-50);
+    --surface-sunken: #eef3f7;
     --border: var(--color-porcelain-200);
+    --border-strong: var(--color-porcelain-300);
     --text: var(--color-porcelain-950);
     --text-muted: var(--color-porcelain-600);
+    --glow-alpha: 0.1;
   }
 
   :root[data-theme='dark'] {
-    --surface: var(--color-porcelain-950);
-    --surface-raised: var(--color-porcelain-900);
-    --border: var(--color-porcelain-800);
-    --text: var(--color-porcelain-50);
-    --text-muted: var(--color-porcelain-300);
+    --surface: #080c14;
+    --surface-raised: #111927;
+    --surface-sunken: #0c111b;
+    --border: #1e2a3c;
+    --border-strong: #2b3b52;
+    --text: #eef4f9;
+    --text-muted: #93a7bd;
+    --glow-alpha: 0.16;
   }
 
   html {
@@ -68,7 +90,9 @@
     background-color: var(--surface);
     color: var(--text);
     font-family: var(--font-sans);
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'ss01';
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
   /* Visible focus for keyboard users on every interactive element. */
@@ -85,8 +109,14 @@
   .bg-raised {
     background-color: var(--surface-raised);
   }
+  .bg-sunken {
+    background-color: var(--surface-sunken);
+  }
   .border-app {
     border-color: var(--border);
+  }
+  .border-strong {
+    border-color: var(--border-strong);
   }
   .text-app {
     color: var(--text);
@@ -94,12 +124,121 @@
   .text-muted {
     color: var(--text-muted);
   }
+
+  /* Display type: the geometric face, tightened. */
+  .font-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
+
+  /* Flush→cyan gradient, clipped to text. Used sparingly on hero accents. */
+  .text-gradient {
+    background-image: linear-gradient(
+      100deg,
+      var(--color-flush-400),
+      var(--color-cyan-400)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Frosted, translucent panel — for the sticky header and floating chips. */
+  .glass {
+    background-color: color-mix(in oklab, var(--surface) 72%, transparent);
+    backdrop-filter: blur(14px) saturate(150%);
+    -webkit-backdrop-filter: blur(14px) saturate(150%);
+  }
+
+  /* An elevated card that lifts on hover. Soft shadow + hairline ring. */
+  .card {
+    background-color: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    box-shadow:
+      0 1px 2px rgb(2 6 23 / 0.04),
+      0 8px 24px -12px rgb(2 6 23 / 0.12);
+    transition:
+      transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 0.25s ease,
+      box-shadow 0.25s ease;
+  }
+  .card-hover:hover {
+    transform: translateY(-3px);
+    border-color: var(--border-strong);
+    box-shadow:
+      0 1px 2px rgb(2 6 23 / 0.06),
+      0 20px 40px -16px rgb(2 6 23 / 0.28);
+  }
+
+  /* A soft radial glow, absolutely positioned behind hero content. */
+  .glow-blob {
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(64px);
+    background: radial-gradient(
+      circle at center,
+      rgb(var(--glow) / var(--glow-alpha)),
+      transparent 70%
+    );
+    pointer-events: none;
+  }
+  .glow-blob-2 {
+    background: radial-gradient(
+      circle at center,
+      rgb(var(--glow-2) / var(--glow-alpha)),
+      transparent 70%
+    );
+  }
+
+  /* Fading dotted grid — subtle texture for hero/section backdrops. */
+  .grid-fade {
+    background-image: radial-gradient(
+      var(--border-strong) 1px,
+      transparent 1px
+    );
+    background-size: 26px 26px;
+    -webkit-mask-image: radial-gradient(
+      ellipse 80% 60% at 50% 0%,
+      #000 40%,
+      transparent 100%
+    );
+    mask-image: radial-gradient(
+      ellipse 80% 60% at 50% 0%,
+      #000 40%,
+      transparent 100%
+    );
+  }
+
+  /* Entrance animation. Elements opt in with .rise (+ optional delay vars). */
+  .rise {
+    animation: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: var(--rise-delay, 0s);
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+/* Respect users who ask for less motion: no entrance animation, no hover lift. */
+@media (prefers-reduced-motion: reduce) {
+  .rise {
+    animation: none;
+  }
+  .card-hover:hover {
+    transform: none;
+  }
 }
 
 /* MapLibre popups ship a white bubble; keep our type readable inside it and
-   drop the default padding so the popup body controls its own spacing.
-   The map paints dark via the Protomaps `dark` flavor, not a CSS filter, so
-   there is no tile-dimming hack here. */
+   drop the default padding so the popup body controls its own spacing. */
 .maplibregl-popup-content {
   border-radius: 0.5rem;
   padding: 0.625rem 0.75rem;

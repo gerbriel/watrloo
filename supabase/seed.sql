@@ -1,4 +1,6 @@
--- Watrloo seed data: ~10 real-world public bathrooms across SF and NYC.
+-- Watrloo seed data: ~16 real-world public bathrooms.
+-- Fresno, CA is featured most prominently — listed first and with the most
+-- entries — followed by SF and NYC.
 --
 -- Bathrooms only. Reviews, profiles, and photos are intentionally omitted:
 -- they hang off real auth.users rows, which a seed can't create cleanly.
@@ -11,6 +13,49 @@ insert into public.bathrooms
   (id, name, address, lat, lng, description,
    wheelchair_accessible, gender_neutral, changing_table, requires_key)
 values
+  -- Fresno, CA (featured) -----------------------------------------------------
+  ('f0000000-0000-4000-8000-000000000001',
+   'Woodward Park Restroom',
+   '7775 Friant Rd, Fresno, CA 93720',
+   36.8600, -119.7735,
+   'Regional park restrooms near the lake and playgrounds. Basic but generally clean; can close around dusk.',
+   true, false, false, false),
+
+  ('f0000000-0000-4000-8000-000000000002',
+   'River Park Shopping Center',
+   '71 E Nees Ave, Fresno, CA 93720',
+   36.8399, -119.7745,
+   'Well-kept shopping-center restrooms near the fountains and food. Reliable and easy to find.',
+   true, false, true, false),
+
+  ('f0000000-0000-4000-8000-000000000003',
+   'Fresno Yosemite International Airport',
+   '5175 E Clinton Way, Fresno, CA 93727',
+   36.7742, -119.7181,
+   'Landside and post-security restrooms. Clean and well-stocked, with a family restroom available.',
+   true, false, true, false),
+
+  ('f0000000-0000-4000-8000-000000000004',
+   'Fresno County Public Library - Central Branch',
+   '2420 Mariposa St, Fresno, CA 93721',
+   36.7377, -119.7862,
+   'Downtown library restrooms across several floors. Quiet and usually tidy on weekday mornings.',
+   true, false, true, false),
+
+  ('f0000000-0000-4000-8000-000000000005',
+   'Chukchansi Park',
+   '1800 Tulare St, Fresno, CA 93721',
+   36.7304, -119.7857,
+   'Ballpark concourse restrooms. Easy access on off days; long lines on Grizzlies game nights.',
+   true, false, true, false),
+
+  ('f0000000-0000-4000-8000-000000000006',
+   'Kuppa Joy Coffee House - Tower District',
+   '833 E Fern Ave, Fresno, CA 93728',
+   36.7590, -119.7930,
+   'Single-occupancy cafe restroom in the Tower District. Ask a barista for the code.',
+   false, true, false, true),
+
   -- San Francisco -----------------------------------------------------------
   ('a0000000-0000-4000-8000-000000000001',
    'Ferry Building Marketplace Restroom',

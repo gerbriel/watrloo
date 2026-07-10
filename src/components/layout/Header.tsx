@@ -42,7 +42,7 @@ export function Header() {
   const navigate = useNavigate();
 
   return (
-    <header className="sticky top-0 z-20 border-b border-app bg-surface">
+    <header className="glass sticky top-0 z-20 border-b border-app">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
         <Link
           to="/"
@@ -50,7 +50,9 @@ export function Header() {
           aria-label="Watrloo home"
         >
           <DropletMark />
-          <span className="text-lg tracking-tight">Watrloo</span>
+          <span className="font-display text-lg font-bold tracking-tight">
+            Watrloo
+          </span>
           <span className="hidden text-xs font-normal text-muted sm:inline">
             · find a good throne
           </span>

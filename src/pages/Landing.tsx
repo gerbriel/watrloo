@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { Stars } from '@/components/ui/Stars';
@@ -32,7 +33,6 @@ const ICONS = {
   plus: 'M12 5v14M5 12h14',
 } as const;
 
-/** Amenity flags, in a marketing-friendly order with the caution last. */
 const AMENITY_ORDER = [
   'wheelchair_accessible',
   'gender_neutral',
@@ -42,41 +42,47 @@ const AMENITY_ORDER = [
 
 function SampleCard() {
   return (
-    <div className="w-full max-w-sm rounded-2xl border border-app bg-surface p-5 shadow-sm">
+    <div className="card w-full max-w-sm p-6">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="font-semibold text-app">Ferry Building Marketplace</p>
-          <p className="text-sm text-muted">San Francisco, CA</p>
+          <p className="font-display text-lg font-semibold text-app">
+            River Park
+          </p>
+          <p className="text-sm text-muted">Fresno, CA</p>
         </div>
-        <span className="rounded-full bg-flush-600/10 px-2 py-0.5 text-xs font-medium text-flush-600">
-          Open
+        <span className="rounded-full bg-flush-600/10 px-2.5 py-1 text-xs font-medium text-flush-500 ring-1 ring-flush-500/20">
+          Open now
         </span>
       </div>
 
-      <div className="mt-3 flex items-center gap-2">
+      <div className="mt-4 flex items-center gap-2">
         <Stars value={4.5} size={18} />
-        <span className="text-sm font-medium text-app">4.5</span>
+        <span className="font-display text-lg font-semibold text-app">4.5</span>
         <span className="text-sm text-muted">· 128 reviews</span>
       </div>
 
-      <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
+      <dl className="mt-5 grid grid-cols-3 gap-2 text-center">
         {[
-          ['Clean', 4.7],
-          ['Privacy', 4.2],
-          ['Access', 5.0],
+          ['Clean', '4.7'],
+          ['Privacy', '4.2'],
+          ['Access', '5.0'],
         ].map(([label, value]) => (
-          <div key={label} className="rounded-lg bg-raised py-2">
-            <dt className="text-xs text-muted">{label}</dt>
-            <dd className="text-sm font-semibold text-app">{value}</dd>
+          <div key={label} className="rounded-xl bg-sunken py-2.5">
+            <dt className="text-[0.7rem] uppercase tracking-wide text-muted">
+              {label}
+            </dt>
+            <dd className="font-display text-base font-semibold text-app">
+              {value}
+            </dd>
           </div>
         ))}
       </dl>
 
       <div className="mt-4 flex flex-wrap gap-1.5">
-        <span className="rounded-full border border-app px-2 py-0.5 text-xs text-muted">
+        <span className="rounded-full border border-app px-2.5 py-1 text-xs text-muted">
           Wheelchair accessible
         </span>
-        <span className="rounded-full border border-app px-2 py-0.5 text-xs text-muted">
+        <span className="rounded-full border border-app px-2.5 py-1 text-xs text-muted">
           Changing table
         </span>
       </div>
@@ -88,63 +94,90 @@ export function Landing() {
   const navigate = useNavigate();
 
   return (
-    <div className="flex flex-col gap-20 py-6">
+    <div className="flex flex-col gap-24 pb-16">
       {/* Hero */}
-      <section className="grid items-center gap-10 md:grid-cols-2">
-        <div className="flex flex-col gap-6">
-          <span className="inline-flex w-fit items-center gap-2 rounded-full bg-raised px-3 py-1 text-xs font-medium text-muted">
-            <Icon path={ICONS.pin} className="size-3.5 text-flush-500" />
-            Community-sourced restroom reviews
-          </span>
+      <section className="relative isolate pt-10 sm:pt-16">
+        {/* Atmosphere: fading grid + two soft color glows. */}
+        <div className="grid-fade absolute inset-x-0 -top-16 -z-10 h-[420px]" aria-hidden="true" />
+        <div
+          className="glow-blob -z-10 left-[-10%] top-[-6%] h-72 w-72 sm:h-96 sm:w-96"
+          aria-hidden="true"
+        />
+        <div
+          className="glow-blob glow-blob-2 -z-10 right-[-6%] top-[10%] h-72 w-72 sm:h-96 sm:w-96"
+          aria-hidden="true"
+        />
 
-          <h1 className="text-4xl font-bold tracking-tight text-app sm:text-5xl">
-            Find a good bathroom,{' '}
-            <span className="text-flush-500">wherever you are.</span>
-          </h1>
+        <div className="grid items-center gap-12 md:grid-cols-2">
+          <div className="flex flex-col gap-6">
+            <span className="rise inline-flex w-fit items-center gap-2 rounded-full border border-app bg-raised/70 px-3 py-1 text-xs font-medium text-muted backdrop-blur">
+              <Icon path={ICONS.pin} className="size-3.5 text-flush-500" />
+              Community-sourced restroom reviews
+            </span>
 
-          <p className="max-w-md text-lg text-muted">
-            Watrloo is a map of public restrooms rated by the people who’ve used
-            them — on the things that actually matter when you’re out and need
-            one now.
-          </p>
+            <h1
+              className="rise font-display text-[2.75rem] font-bold leading-[1.05] tracking-tight text-app sm:text-6xl"
+              style={{ '--rise-delay': '0.05s' } as CSSProperties}
+            >
+              Find a good bathroom,{' '}
+              <span className="text-gradient">wherever you are.</span>
+            </h1>
 
-          <div className="flex flex-wrap gap-3">
-            <Button size="lg" variant="primary" onClick={() => navigate('/browse')}>
-              Browse bathrooms
-            </Button>
-            <Button size="lg" variant="secondary" onClick={() => navigate('/map')}>
-              Open the map
-            </Button>
+            <p
+              className="rise max-w-md text-lg leading-relaxed text-muted"
+              style={{ '--rise-delay': '0.12s' } as CSSProperties}
+            >
+              A map of public restrooms rated by the people who’ve used them — on
+              the things that actually matter when you’re out and need one now.
+            </p>
+
+            <div
+              className="rise flex flex-wrap gap-3"
+              style={{ '--rise-delay': '0.18s' } as CSSProperties}
+            >
+              <Button size="lg" variant="primary" onClick={() => navigate('/browse')}>
+                Browse bathrooms
+              </Button>
+              <Button size="lg" variant="secondary" onClick={() => navigate('/map')}>
+                Open the map
+              </Button>
+            </div>
+
+            <p
+              className="rise text-sm text-muted"
+              style={{ '--rise-delay': '0.24s' } as CSSProperties}
+            >
+              Free, and no account needed to browse.
+            </p>
           </div>
 
-          <p className="text-sm text-muted">
-            Free, no account needed to browse. Add a review in seconds.
-          </p>
-        </div>
-
-        <div className="flex justify-center md:justify-end">
-          <SampleCard />
+          <div
+            className="rise flex justify-center md:justify-end"
+            style={{ '--rise-delay': '0.15s' } as CSSProperties}
+          >
+            <SampleCard />
+          </div>
         </div>
       </section>
 
       {/* What you can rate */}
-      <section className="flex flex-col gap-8">
+      <section className="flex flex-col gap-10">
         <div className="max-w-2xl">
-          <h2 className="text-2xl font-bold tracking-tight text-app">
+          <h2 className="font-display text-3xl font-bold tracking-tight text-app">
             Ratings that tell you what to expect
           </h2>
-          <p className="mt-2 text-muted">
+          <p className="mt-3 text-lg text-muted">
             A single star score hides the details. Watrloo breaks a bathroom down
             into what you’d actually want to know before walking in.
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-5 sm:grid-cols-3">
           {[
             {
               icon: ICONS.sparkle,
               title: 'Cleanliness',
-              body: 'Because the difference between a 2 and a 5 here is the whole point.',
+              body: 'The difference between a 2 and a 5 here is the whole point.',
             },
             {
               icon: ICONS.shield,
@@ -157,25 +190,24 @@ export function Landing() {
               body: 'Step-free access, grab bars, and room to actually turn around.',
             },
           ].map((f) => (
-            <div
-              key={f.title}
-              className="flex flex-col gap-2 rounded-xl border border-app bg-raised p-5"
-            >
-              <span className="flex size-9 items-center justify-center rounded-lg bg-flush-600/10 text-flush-600">
+            <div key={f.title} className="card card-hover flex flex-col gap-3 p-6">
+              <span className="flex size-11 items-center justify-center rounded-xl bg-gradient-to-br from-flush-500/15 to-cyan-500/15 text-flush-500 ring-1 ring-flush-500/20">
                 <Icon path={f.icon} />
               </span>
-              <h3 className="font-semibold text-app">{f.title}</h3>
-              <p className="text-sm text-muted">{f.body}</p>
+              <h3 className="font-display text-lg font-semibold text-app">
+                {f.title}
+              </h3>
+              <p className="text-sm leading-relaxed text-muted">{f.body}</p>
             </div>
           ))}
         </div>
 
-        <div className="rounded-xl border border-app bg-surface p-5">
-          <p className="text-sm font-medium text-app">Know before you go</p>
+        <div className="card p-6">
+          <p className="font-display font-semibold text-app">Know before you go</p>
           <p className="mt-1 text-sm text-muted">
             Every listing flags the things that make or break a trip:
           </p>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-4 flex flex-wrap gap-2">
             {AMENITY_ORDER.map((key) => {
               const caution = key === 'requires_key';
               return (
@@ -183,8 +215,8 @@ export function Landing() {
                   key={key}
                   className={
                     caution
-                      ? 'rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-sm text-app'
-                      : 'rounded-full border border-app px-3 py-1 text-sm text-muted'
+                      ? 'rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-sm text-app'
+                      : 'rounded-full border border-app bg-sunken px-3 py-1.5 text-sm text-muted'
                   }
                 >
                   {AMENITY_LABELS[key]}
@@ -196,11 +228,11 @@ export function Landing() {
       </section>
 
       {/* How it works */}
-      <section className="flex flex-col gap-8">
-        <h2 className="text-2xl font-bold tracking-tight text-app">
+      <section className="flex flex-col gap-10">
+        <h2 className="font-display text-3xl font-bold tracking-tight text-app">
           How it works
         </h2>
-        <ol className="grid gap-6 sm:grid-cols-3">
+        <ol className="grid gap-8 sm:grid-cols-3">
           {[
             {
               n: 1,
@@ -212,7 +244,7 @@ export function Landing() {
               n: 2,
               icon: ICONS.star,
               title: 'Read real reviews',
-              body: 'See overall scores, sub-ratings, amenities, and photos from other people.',
+              body: 'Overall scores, sub-ratings, amenities, and photos from other people.',
             },
             {
               n: 3,
@@ -223,29 +255,34 @@ export function Landing() {
           ].map((s) => (
             <li key={s.n} className="flex flex-col gap-3">
               <div className="flex items-center gap-3">
-                <span className="flex size-8 items-center justify-center rounded-full bg-flush-600 text-sm font-bold text-white">
+                <span className="flex size-9 items-center justify-center rounded-full bg-gradient-to-br from-flush-500 to-cyan-500 font-display text-sm font-bold text-white shadow-lg shadow-flush-500/25">
                   {s.n}
                 </span>
-                <span className="text-muted">
-                  <Icon path={s.icon} />
-                </span>
+                <span className="h-px flex-1 bg-gradient-to-r from-border to-transparent" />
               </div>
-              <h3 className="font-semibold text-app">{s.title}</h3>
-              <p className="text-sm text-muted">{s.body}</p>
+              <h3 className="font-display text-lg font-semibold text-app">
+                {s.title}
+              </h3>
+              <p className="text-sm leading-relaxed text-muted">{s.body}</p>
             </li>
           ))}
         </ol>
       </section>
 
       {/* Final CTA */}
-      <section className="flex flex-col items-center gap-5 rounded-2xl border border-app bg-raised px-6 py-12 text-center">
-        <h2 className="max-w-xl text-2xl font-bold tracking-tight text-app sm:text-3xl">
+      <section className="relative isolate overflow-hidden rounded-3xl border border-app bg-raised px-6 py-16 text-center">
+        <div
+          className="glow-blob -z-10 left-1/2 top-0 h-64 w-[36rem] -translate-x-1/2"
+          aria-hidden="true"
+        />
+        <div className="grid-fade absolute inset-0 -z-10" aria-hidden="true" />
+        <h2 className="mx-auto max-w-xl font-display text-3xl font-bold tracking-tight text-app sm:text-4xl">
           The next bathroom you find could save someone’s afternoon.
         </h2>
-        <p className="max-w-md text-muted">
+        <p className="mx-auto mt-4 max-w-md text-lg text-muted">
           Start browsing, or add the first review for a place you know.
         </p>
-        <div className="flex flex-wrap justify-center gap-3">
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
           <Button size="lg" variant="primary" onClick={() => navigate('/browse')}>
             Browse bathrooms
           </Button>

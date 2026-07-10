@@ -11,9 +11,12 @@ import {
   registerPmtilesProtocol,
 } from '@/lib/basemap';
 
-/** Geographic center of the contiguous US: a neutral default with no pins. */
-const DEFAULT_CENTER: [number, number] = [-98.5795, 39.8283]; // [lng, lat]
-const DEFAULT_ZOOM = 3.5;
+/**
+ * Fresno, CA — the featured city. The map opens here until geolocation or an
+ * explicit `center` takes over, so a first-time visitor lands on local pins.
+ */
+const DEFAULT_CENTER: [number, number] = [-119.7871, 36.7458]; // [lng, lat]
+const DEFAULT_ZOOM = 11;
 
 registerPmtilesProtocol();
 
@@ -107,8 +110,11 @@ export interface BathroomMapProps {
   zoom?: number;
   /** Fire when a rating pin is clicked (the popup opens regardless). */
   onPinClick?: (bathroom: BathroomWithStats) => void;
-  /** Fit the view to all pins once they load (read-only map page). */
-  fit?: boolean;
+  /**
+   * Add a geolocate button and try to center on the visitor's location once,
+   * on load. Falls back to the default view if they decline or it's blocked.
+   */
+  locate?: boolean;
   /** Picker mode: clicking or dragging drops a pin and reports its coords. */
   selectable?: boolean;
   onSelect?: (lat: number, lng: number) => void;
@@ -122,7 +128,7 @@ export function BathroomMap({
   center,
   zoom,
   onPinClick,
-  fit = false,
+  locate = false,
   selectable = false,
   onSelect,
   selected = null,
@@ -154,6 +160,27 @@ export function BathroomMap({
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+
+    if (locate) {
+      // Works on desktop and mobile via the browser Geolocation API: the control
+      // owns the permission prompt, the "you are here" dot + accuracy ring, and
+      // live tracking as the visitor moves.
+      const geolocate = new maplibregl.GeolocateControl({
+        positionOptions: { enableHighAccuracy: true },
+        trackUserLocation: true,
+        showUserLocation: true,
+      });
+      map.addControl(geolocate, 'top-right');
+      // Auto-detect once on first load so the map opens on their area when
+      // allowed; a denial or insecure context silently keeps the default view.
+      map.once('load', () => {
+        try {
+          geolocate.trigger();
+        } catch {
+          /* geolocation unsupported or blocked — the default view stands */
+        }
+      });
+    }
 
     const unsubscribeTheme = onMapThemeChange((theme) => {
       // Markers are DOM overlays, so they survive a style swap untouched.
@@ -260,21 +287,6 @@ export function BathroomMap({
       pickMarkerRef.current.setLngLat([selected.lng, selected.lat]);
     }
   }, [selectable, selected]);
-
-  // --- Fit the viewport to every pin. ---------------------------------------
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !fit || selectable || bathrooms.length === 0) return;
-
-    if (bathrooms.length === 1) {
-      map.easeTo({ center: [bathrooms[0].lng, bathrooms[0].lat], zoom: 15 });
-      return;
-    }
-
-    const bounds = new maplibregl.LngLatBounds();
-    for (const b of bathrooms) bounds.extend([b.lng, b.lat]);
-    map.fitBounds(bounds, { padding: 56, maxZoom: 16, duration: 0 });
-  }, [bathrooms, fit, selectable]);
 
   return (
     <div className={className ?? 'h-full w-full'} style={{ position: 'relative' }}>

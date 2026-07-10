@@ -67,7 +67,7 @@ export function MapPage() {
           <MapSpinner label="Loading bathrooms" />
         ) : (
           <Suspense fallback={<MapSpinner label="Loading map" />}>
-            <BathroomMap bathrooms={bathrooms} fit className="h-full w-full" />
+            <BathroomMap bathrooms={bathrooms} locate className="h-full w-full" />
           </Suspense>
         )}
       </div>

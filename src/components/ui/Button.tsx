@@ -6,11 +6,11 @@ type Size = 'sm' | 'md' | 'lg';
 
 const VARIANTS: Record<Variant, string> = {
   primary:
-    'bg-flush-600 text-white hover:bg-flush-500 disabled:hover:bg-flush-600',
+    'bg-gradient-to-b from-flush-500 to-flush-600 text-white shadow-lg shadow-flush-600/25 hover:from-flush-400 hover:to-flush-500 hover:shadow-flush-500/30 disabled:shadow-none',
   secondary:
-    'bg-raised text-app border border-app hover:bg-porcelain-100 dark:hover:bg-porcelain-800',
+    'bg-raised text-app border border-app hover:border-strong hover:bg-sunken',
   ghost: 'text-app hover:bg-raised',
-  danger: 'bg-red-600 text-white hover:bg-red-500 disabled:hover:bg-red-600',
+  danger: 'bg-red-600 text-white shadow-lg shadow-red-600/20 hover:bg-red-500',
 };
 
 const SIZES: Record<Size, string> = {
@@ -41,8 +41,9 @@ export function Button({
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-lg font-medium',
-        'transition-colors disabled:cursor-not-allowed disabled:opacity-60',
+        'inline-flex items-center justify-center gap-2 rounded-xl font-medium',
+        'transition-[transform,background-color,box-shadow,border-color] duration-200',
+        'active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60 disabled:active:translate-y-0',
         VARIANTS[variant],
         SIZES[size],
         className,
