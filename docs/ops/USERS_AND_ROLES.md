@@ -9,6 +9,21 @@ Every line of client code and every policy name is readable by an attacker. So
 authorization is whatever Postgres RLS + GRANTs enforce. The React layer can
 only *hide buttons*. If a rule matters, it lives in the database.
 
+## Verification
+
+Independent fact-check of the platform claims in this document (checked 2026-07-10 against primary sources). The two headline claims — Custom Access Token Hook on Free, and the InitPlan optimization — both confirmed.
+
+| Claim | Status | Source | Note |
+|---|---|---|---|
+| Custom Access Token Hook is available on the **Free** plan | **CONFIRMED** | [auth-hooks](https://supabase.com/docs/guides/auth/auth-hooks) | availability table lists Custom Access Token = **Free, Pro** (also: Before User Created = Free, Pro) |
+| Hook is a Postgres fn `f(event jsonb) returns jsonb`; enabled via Dashboard → Authentication → Hooks, or `config.toml` `pg-functions://…` uri | **CONFIRMED** | [auth-hooks](https://supabase.com/docs/guides/auth/auth-hooks) | — |
+| RLS `(select auth.uid())` / `(select public.is_moderator())` hoists to a **once-per-statement InitPlan**; applies to `auth.jwt()` and `security definer` fns | **CONFIRMED** | [RLS performance](https://supabase.com/docs/guides/troubleshooting/rls-performance-and-best-practices-Z5Jjwv) | "Wrapping the function… causes an initPlan… to cache the results versus calling the function on each row." Valid only when the result doesn't depend on row data — the `stable` helpers here qualify |
+| Column-level `REVOKE` is a no-op while the role holds table-level UPDATE; correct fix = revoke table-level then `GRANT (col,…)` | **CONFIRMED** | [PostgreSQL GRANT/REVOKE](https://www.postgresql.org/docs/current/sql-revoke.html) | — |
+| Stock Supabase grants table-wide privileges to `authenticated` | **CONFIRMED (adjacent)** | [discussion #7428](https://github.com/orgs/supabase/discussions/7428) | cited; consistent, not re-fetched this pass |
+| `app_metadata` is user-immutable; `auth.jwt() -> 'app_metadata' ->> 'role'` read path | **CONFIRMED (adjacent)** | [RBAC guide](https://supabase.com/docs/guides/api/custom-claims-and-role-based-access-control-rbac) | consistent with the auth-hooks / RBAC docs |
+| `config.toml` `[auth.hook.custom_access_token]` key + `pg-functions://` uri format | **UNVERIFIABLE** | — | doc already flags ⚠; verify against the installed CLI version |
+| Direct `insert into auth.users` for the sentinel row | **UNVERIFIABLE** | — | doc already flags ⚠; the nullable-`author_id` variant avoids touching `auth.users` |
+
 ---
 
 ## 1. Recommended role model

@@ -7,6 +7,20 @@
 
 ---
 
+## Verification
+
+Independent fact-check of the platform/pricing claims in this document (checked 2026-07-10 against primary sources). All load-bearing numbers confirmed; no figure required correction.
+
+| Claim | Status | Source | Note |
+|---|---|---|---|
+| Supabase Free: 500 MB DB · 1 GB storage · 5 GB egress (+5 GB cached) · 50k MAU · 2 projects · pause after 1 wk | **CONFIRMED** | [pricing](https://supabase.com/pricing) | egress split confirmed (5 GB DB + 5 GB cached) |
+| Free compute (Nano): **60** direct / **200** pooler connections | **CONFIRMED** | [compute-and-disk](https://supabase.com/docs/guides/platform/compute-and-disk) | — |
+| Supabase image transformation is **Pro plan and above only** (not Free) | **CONFIRMED** | [image-transformations](https://supabase.com/docs/guides/storage/serving/image-transformations) | "Image Resizing is currently enabled for Pro Plan and above." This is what makes client-side compression mandatory — the decision is sound |
+| Cloudflare R2 Free: 10 GB storage · 1M Class A · 10M Class B · **$0 egress** | **CONFIRMED** | [R2 pricing](https://developers.cloudflare.com/r2/pricing/) | — |
+| A Range GET is a **Class B** operation | **CONFIRMED** | [R2 pricing](https://developers.cloudflare.com/r2/pricing/) | GetObject (incl. Range) is Class B; PutObject is Class A |
+| OSM tile policy forbids app/CDN use without an identifying User-Agent, blocks heavy use without notice, and gives no SLA | **CONFIRMED** | [OSM tile policy](https://operations.osmfoundation.org/policies/tiles/) | supports moving the basemap off `tile.openstreetmap.org` to R2/PMTiles |
+| MapLibre GL ~268 KB gzip / ~225 KB gzip net add over Leaflet | **NOT CHECKED** | `TECH_EVALUATION.md` | sourced from a sibling doc, not a platform/pricing claim; out of this fact-check's scope. No npm license / weekly-download / release-date claims appear in this document to spot-check |
+
 ## 1. Where this actually breaks first
 
 All limits below are the **Supabase Free plan** and **Cloudflare R2 Free** limits, verified against the vendors' own pages (URLs cited in §4). Arithmetic assumptions (KB/photo, photos/page) are labeled as **modeled**; the limits themselves are **verified**.

@@ -32,7 +32,7 @@ Three pieces:
 | --- | --- | --- |
 | `us-z13.pmtiles` | Vector tiles, contiguous US, zoom 0–13 | ~3.9 GB |
 | `assets/fonts/` | Three Noto Sans stacks the style references | ~13 MB |
-| `assets/sprites/v4/` | Icon sprite sheets | ~260 KB |
+| `assets/sprites/v4/` | Icon sprite sheets (light/dark/etc., 1x + @2x) | ~180 KB |
 
 The fonts and sprites matter more than they look. Protomaps' default style
 points `glyphs` and `sprite` at `protomaps.github.io`. Leaving those defaults in
@@ -76,6 +76,80 @@ street detail that makes the map useful for finding a specific door.
 (a bbox spanning them would drag in most of Canada and the Pacific). MapLibre can
 hold several PMTiles sources; that is left as a follow-up.
 
+## Verify locally before uploading
+
+The archive is ~4 GB. Every way this can fail — a corrupt archive, a missing
+glyph range, a font stack the style references but we never vendored, a wrong
+Content-Type, absent CORS or Range support — otherwise surfaces only *after* the
+upload, as a blank map with no obvious cause. Prove the whole pipeline against a
+local server first, so hosting on R2 is a pure swap.
+
+This exact sequence has been run end to end on this build; the numbers below are
+what it produced.
+
+**1. The archive is structurally sound.**
+
+```bash
+pmtiles show basemap/us-z13.pmtiles   # header, tile type, zoom, bounds, clustered
+pmtiles verify basemap/us-z13.pmtiles # structure check (no tile-content decode)
+```
+
+Observed: spec v3, tile type **mvt**, zoom **0–13**, bounds
+`-125, 24.4, -66.9, 49.4`, `clustered: true`, tile + internal compression
+**gzip**, 9 vector layers (`boundaries, buildings, earth, landcover, landuse,
+places, pois, roads, water`). `verify` passes.
+
+A single real tile decodes as a non-empty MVT. Dolores Park (37.7596, -122.4269)
+is z13 tile `13/1310/3166`:
+
+```bash
+pmtiles tile basemap/us-z13.pmtiles 13 1310 3166 | head -c2 | xxd  # 1f 8b => gzip
+```
+
+That tile is 90,912 bytes gzipped; decompressed it parses as MVT with the layers
+`buildings, earth, landuse, places, pois, roads, water` (218 road, 25 building,
+25 place features, etc.).
+
+**2. Serve `basemap/` over HTTP with Range + CORS**, then point the app at it and
+run the verifier. The static server must do three things a naive one won't:
+support byte **Range** (206 responses), send permissive **CORS**, and **expose**
+`content-range` + `etag` to script (see the CORS section below — this is the same
+requirement R2 has). With such a server on, say, port 8788:
+
+```bash
+VITE_BASEMAP_URL=http://127.0.0.1:8788/us-z13.pmtiles \
+VITE_BASEMAP_ASSETS_URL=http://127.0.0.1:8788/assets \
+  npm run dev
+# In another shell — the same checklist you'll run against R2 later:
+./scripts/verify-basemap.sh http://127.0.0.1:8788
+```
+
+`verify-basemap.sh` checks, and this build passed, all of: `accept-ranges: bytes`;
+a `Range: bytes=0-15` GET returning **206** with exactly 16 bytes whose first 7
+are the `PMTiles` magic; each of the three glyph stacks at
+`/assets/fonts/<stack>/0-255.pbf` returning **200 + application/x-protobuf**; the
+`light`/`dark` sprites (`.json`, `.png`, and `@2x`) returning **200** with
+`application/json` / `image/png`; and CORS echoing the origin while exposing
+`content-range` and `etag`.
+
+**3. The style references only assets we vendored.** The Protomaps style built by
+`layers('protomaps', namedFlavor(theme))` produces 71 layers and asks for exactly
+three font stacks — **Noto Sans Regular, Noto Sans Medium, Noto Sans Italic** —
+which are the three we ship (256 glyph ranges each). It emits static icon names
+`arrow`, `capital`, `townspot`, `train_station`, and the road-shield families
+`US:I-`, `NL:S-road-`, `generic_shield-` in the `1char`…`5char` variants — every
+one of which is present in the sprite JSON. The `pois` layer sets `icon-image`
+from the feature's `kind` at runtime; a value with no matching sprite renders no
+icon (a no-op), not a broken map. **No font stack or static icon the style names
+is missing.**
+
+**4. It renders.** With the app pointed at the local server, `/map` loads the real
+style (source `pmtiles://…`, attribution "Protomaps © OpenStreetMap"), the browser
+issues Range reads against the archive (verified: 6 archive reads, 5 glyph fetches,
+2 sprite fetches for the default US view), and the dark basemap paints — land and
+water fills, state boundaries, and place labels (proving the self-hosted glyphs
+work) — with all pins on top.
+
 ## Host it on Cloudflare R2
 
 R2's free tier includes 10 GB of storage and **zero egress fees**, which is what
@@ -88,28 +162,30 @@ Cloudflare dashboard → R2 → *Create bucket* → name it `watrloo-basemap`.
 
 ### 2. Upload
 
-R2 is S3-compatible. With `rclone` or the AWS CLI configured against your R2
-endpoint (`https://<account-id>.r2.cloudflarestorage.com`):
+R2 is S3-compatible. Use the upload script — it sets the right Content-Type per
+file class (the archive `application/octet-stream`, glyphs
+`application/x-protobuf`, sprite JSON `application/json`, sprite PNG `image/png`),
+which MapLibre and the pmtiles client dispatch on, and it is idempotent so a
+partial upload resumes. It needs `rclone` (preferred) or the AWS CLI already on
+PATH — it installs nothing.
 
 ```bash
-# The archive. This is a ~4 GB upload; do it once.
-aws s3 cp basemap/us-z13.pmtiles s3://watrloo-basemap/us-z13.pmtiles \
-  --endpoint-url "$R2_ENDPOINT" \
-  --content-type application/octet-stream
+export R2_ACCOUNT_ID=...            # derives the endpoint
+export R2_BUCKET=watrloo-basemap
+export R2_ACCESS_KEY_ID=...
+export R2_SECRET_ACCESS_KEY=...
 
-# Fonts and sprites. Content types matter: MapLibre parses these by type.
-aws s3 cp basemap/assets s3://watrloo-basemap/assets --recursive \
-  --endpoint-url "$R2_ENDPOINT" \
-  --exclude "*" --include "*.pbf" --content-type application/x-protobuf
-
-aws s3 cp basemap/assets s3://watrloo-basemap/assets --recursive \
-  --endpoint-url "$R2_ENDPOINT" \
-  --exclude "*" --include "*.json" --content-type application/json
-
-aws s3 cp basemap/assets s3://watrloo-basemap/assets --recursive \
-  --endpoint-url "$R2_ENDPOINT" \
-  --exclude "*" --include "*.png" --content-type image/png
+DRY_RUN=1 ./scripts/upload-basemap.sh   # preview exactly what it will do
+./scripts/upload-basemap.sh             # the ~4 GB archive + fonts + sprites
 ```
+
+Set `PMTILES_FILE=us-z13-YYYYMMDD.pmtiles` to publish a versioned archive
+alongside the current one (see Refreshing). `R2_ENDPOINT` overrides the derived
+`https://<account-id>.r2.cloudflarestorage.com`.
+
+Doing it by hand instead is four `aws s3 cp` / `sync` passes — one per file class
+with its `--content-type` — against `--endpoint-url "$R2_ENDPOINT"`; the script is
+just those passes with preflight checks.
 
 ### 3. Make it publicly readable
 
@@ -134,9 +210,13 @@ nothing. In the bucket's **Settings → CORS policy**:
 ]
 ```
 
-`ExposeHeaders` is the part people miss. The `pmtiles` client reads
-`content-range` and `etag` off the response; if they aren't exposed to script,
-range reads fail even though the network request succeeded.
+`ExposeHeaders` is the part people miss, and it is exactly right as written:
+driving the `pmtiles` client's `FetchSource` against a server that exposes
+`etag, content-range, content-length, accept-ranges` was confirmed to satisfy its
+range reads (it reads `content-range` to size the archive and `etag` to detect a
+changed archive mid-flight; without them exposed to script the reads fail even
+though the network request succeeded). `AllowedHeaders` must include `range`;
+`if-match` is harmless to keep though this client avoids sending it under CORS.
 
 ### 5. Point the app at it
 
@@ -148,21 +228,19 @@ VITE_BASEMAP_ASSETS_URL=https://basemap.example.com/assets
 
 ### 6. Verify before trusting it
 
+One command runs the whole checklist — Range, Content-Types, all three glyph
+stacks, every sprite, and CORS (including the exposed headers) — and prints a
+`✓`/`✗` board, exiting nonzero on any failure:
+
 ```bash
-# Must print 206 and 'accept-ranges: bytes'.
-curl -s -o /dev/null -D - -r 0-15 "$VITE_BASEMAP_URL" | head -1
-curl -sI "$VITE_BASEMAP_URL" | grep -i accept-ranges
-
-# Must print 200.
-curl -s -o /dev/null -w '%{http_code}\n' \
-  "$VITE_BASEMAP_ASSETS_URL/fonts/Noto%20Sans%20Regular/0-255.pbf"
-curl -s -o /dev/null -w '%{http_code}\n' \
-  "$VITE_BASEMAP_ASSETS_URL/sprites/v4/light.json"
-
-# Must echo back your origin.
-curl -sI -H "Origin: http://localhost:5173" "$VITE_BASEMAP_URL" \
-  | grep -i access-control-allow-origin
+./scripts/verify-basemap.sh https://basemap.example.com
+# custom origin to test production CORS, and a versioned archive name:
+ORIGIN=https://your-app-domain ./scripts/verify-basemap.sh \
+  https://basemap.example.com us-z13-20261001.pmtiles
 ```
+
+This is the same script used to gate the local dry-run, so a green board here
+means the only thing that changed from the proven-good local setup is the host.
 
 ## If you skip all of this
 

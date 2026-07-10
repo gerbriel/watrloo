@@ -23,6 +23,23 @@ Key structural facts that shape everything below:
 
 > Every platform claim below is cited. Where a fact could not be verified from primary docs, it is marked **[unverified]** with the exact test to confirm it.
 
+## Verification
+
+Independent fact-check of the platform claims in this document (checked 2026-07-10 against primary sources).
+
+| Claim | Status | Source | Correction / note |
+|---|---|---|---|
+| Free tier: 500 MB DB, 1 GB storage, 5 GB egress, 50k MAU, 2 projects | **CONFIRMED** | [pricing](https://supabase.com/pricing) | egress is **5 GB database egress + 5 GB cached egress** (both 5 GB, counted separately) |
+| Pause after ~7 days inactivity; warning email ~1 wk prior; confirmation email after; 90-day restore window | **CONFIRMED** | [free-project-pausing](https://supabase.com/docs/guides/platform/free-project-pausing) | — |
+| Data **permanently deleted** after the 90-day window | **UNVERIFIABLE** | [free-project-pausing](https://supabase.com/docs/guides/platform/free-project-pausing) | page states only a 90-day *restore* window; it does **not** state the data is deleted afterward. Reasonable operational assumption, not a documented fact |
+| DB > 500 MB → read-only; reads OK; writes fail `cannot execute INSERT in a read-only transaction` | **CONFIRMED** | [database-size](https://supabase.com/docs/guides/platform/database-size) | — |
+| Read-only recovery SQL (session read-write / vacuum / default_transaction_read_only off) | **CONFIRMED** | [database-size](https://supabase.com/docs/guides/platform/database-size) | — |
+| Org Fair-Use restriction → HTTP 402; evaluated **per organization** on **average daily DB size** over the billing period | **CONFIRMED** | [database-size](https://supabase.com/docs/guides/platform/database-size) | — |
+| Free tier: **no automated backups, no PITR**; Pro 7 / Team 14 / Enterprise 30 days; recommends CLI `db dump` | **CONFIRMED** | [backups](https://supabase.com/docs/guides/platform/backups) | — |
+| PITR is a paid add-on (Pro+), needs ≥ Small compute add-on, and **disables daily backups** | **CONFIRMED** | [backups](https://supabase.com/docs/guides/platform/backups), [PITR usage](https://supabase.com/docs/guides/platform/manage-your-usage/point-in-time-recovery) | — |
+| Cloudflare R2 free: 10 GB storage, $0 egress; a Range GET is a **Class B** op | **CONFIRMED** | [R2 pricing](https://developers.cloudflare.com/r2/pricing/) | GetObject (incl. Range) is Class B |
+| GitHub Actions: public repos unlimited; private Free = 2,000 Linux min + 500 MB artifacts | **CONFIRMED** | [GitHub pricing](https://github.com/pricing) | the co-cited [billing-and-usage concepts page](https://docs.github.com/en/actions/concepts/billing-and-usage) does **not** itself list these numbers; the pricing page carries them |
+
 ---
 
 ## 1. Failure modes, ranked by likelihood × blast radius
@@ -49,7 +66,7 @@ Ranking logic: F1 sits at the top because it is a **scheduled certainty** for an
 
 ### F1 — Supabase free project paused (the #1 outage)
 
-**Policy (verified):** Supabase pauses Free-plan projects that "do not receive sufficient user database activity over the past week." The current docs deliberately avoid a hard number, saying "a few user requests to the database each day over the previous week" is enough to stay active; the widely-cited threshold is **7 days** of inactivity. You get a **warning email ~1 week before** the pause and a **confirmation email after**. A paused project can be restored **for up to 90 days**; after that, restoration is not guaranteed and the data is at risk of permanent deletion. ([free-project-pausing](https://supabase.com/docs/guides/platform/free-project-pausing))
+**Policy (verified):** Supabase pauses Free-plan projects that "do not receive sufficient user database activity over the past week." The current docs deliberately avoid a hard number, saying "a few user requests to the database each day over the previous week" is enough to stay active; the widely-cited threshold is **7 days** of inactivity. You get a **warning email ~1 week before** the pause and a **confirmation email after**. A paused project can be restored **for up to 90 days**; after that, restoration is not guaranteed and the data is at risk of permanent deletion **[unverified: the pausing page documents a 90-day *restore* window but does not state the data is deleted afterward — checked 2026-07-10]**. ([free-project-pausing](https://supabase.com/docs/guides/platform/free-project-pausing))
 
 **User-visible symptom:** The static SPA still loads (it's on R2/Pages, independent). The basemap still loads (R2, independent). But every data call fails — `listBathrooms` rejects, so `Home` and `MapPage` fall into their `status === 'error'` branch ("Couldn't load bathrooms / the map", with "Try again"). Sign-in fails. Effectively: **the shell and map render, but there are no bathrooms and you can't log in.**
 
@@ -91,9 +108,9 @@ set default_transaction_read_only = 'off';
 
 ### F3 — Egress / organization quota exceeded → Fair-Use 402
 
-**Policy (verified):** Free plan includes **5 GB egress** (historically split as ~5 GB database egress + ~5 GB cached egress — verify the current split on the pricing page ([pricing](https://supabase.com/pricing))). When an **organization** exceeds its plan quota, it can be placed under a **Fair-Use service restriction**: requests return **HTTP 402**. The DB-size quota that can trigger this is evaluated **per organization** (summed across projects) on the **average daily size over the billing period**, not the live number. ([database-size](https://supabase.com/docs/guides/platform/database-size), [billing-on-supabase](https://supabase.com/docs/guides/platform/billing-on-supabase))
+**Policy (verified):** Free plan includes **5 GB egress** (confirmed 2026-07-10: the split is **5 GB database egress + 5 GB cached egress**, both 5 GB, counted separately, per the pricing page ([pricing](https://supabase.com/pricing))). When an **organization** exceeds its plan quota, it can be placed under a **Fair-Use service restriction**: requests return **HTTP 402**. The DB-size quota that can trigger this is evaluated **per organization** (summed across projects) on the **average daily size over the billing period**, not the live number. ([database-size](https://supabase.com/docs/guides/platform/database-size), [billing-on-supabase](https://supabase.com/docs/guides/platform/billing-on-supabase))
 
-**Why the free plan can't surprise-bill you:** there's no payment method and no spend cap concept on Free — so exceeding limits produces **restriction, not a bill**. ([billing-on-supabase](https://supabase.com/docs/guides/platform/billing-on-supabase)) The specific 402/read-only enforcement thresholds are the enforcement mechanism.
+**Why the free plan can't surprise-bill you:** there's no payment method and no spend cap concept on Free — so exceeding limits produces **restriction, not a bill**. The **restriction** side is confirmed (402 Fair-Use / read-only enforcement, per [database-size](https://supabase.com/docs/guides/platform/database-size)); the **"not a bill"** side is inferred — the billing page documents overage billing for *paid* plans and states no equivalent for Free, rather than positively asserting Free is never billed **[partially unverified — checked 2026-07-10]**. ([billing-on-supabase](https://supabase.com/docs/guides/platform/billing-on-supabase)) The specific 402/read-only enforcement thresholds are the enforcement mechanism.
 
 **User-visible symptom:** API calls return 402; the app shows the generic error state everywhere. Looks like a total outage but is a quota block.
 
@@ -212,9 +229,27 @@ Notes and gotchas:
 
 ### F9 — Orphaned storage objects when a review is deleted
 
-**The gap (verified from code + schema):** `deleteReviewPhoto` (`src/lib/api/photos.ts:52`) correctly removes **both** the row and the storage object. But **deleting a *review*** (`deleteReview`, `src/lib/api/reviews.ts:55`) only deletes the `reviews` row; the DB cascade removes the `review_photos` **rows**, but **storage objects are not in Postgres and are never touched.** Every review deletion that had photos leaves those image bytes stranded in the `review-photos` bucket, consuming the 1 GB cap forever (accelerating F2/storage exhaustion).
+> ## ⛔ STATUS: FIXED IN CODE. **DO NOT APPLY FIX A — it breaks the app.**
+>
+> **Fix A below was executed against the live database and it does not work.**
+> `storage.objects` carries a platform-owned `storage.protect_delete()` trigger
+> that rejects `DELETE` issued from SQL. Because Fix A hangs a `BEFORE DELETE`
+> trigger on `reviews`, the rejection propagates: **deleting any review that has
+> photos would abort with an error.** Not a slow leak — an immediate, total
+> failure of the review-delete path. See `SQL_VALIDATION.md`.
+>
+> Deleting storage *bytes* is not a SQL operation. It must go through the Storage
+> API. The shipped fix does exactly that: `deleteReview()` now reads the review's
+> `storage_path`s, removes the objects via `supabase.storage.remove()`, and only
+> then deletes the row — objects first, so a storage failure aborts with the row
+> intact and a retry still works. The reverse order strands the bytes with no
+> pointer to them. `deleteReviewPhoto()` was reordered for the same reason.
+>
+> Fix A is preserved below only to document why it is wrong.
 
-**Fix A — reap on delete (primary; DATA agent).** Delete the storage rows when the parent review goes, in the same cascade path. In Supabase, `storage.objects` is the metadata table the storage service reads, so removing those rows is the supported way to drop the objects:
+**The gap (verified from code + schema):** the DB cascade removes the `review_photos` **rows**, but **storage objects are not in Postgres.** Before the fix, every review deletion that had photos left those image bytes stranded in the `review-photos` bucket, consuming the 1 GB cap forever (accelerating F2/storage exhaustion).
+
+**Fix A — ~~reap on delete~~ (REJECTED, see the box above).** The theory was that `storage.objects` is the metadata table the storage service reads, so removing those rows would drop the objects. It is not deletable from SQL:
 ```sql
 -- Sketch only. Before the review is deleted, remove its objects' storage rows.
 create or replace function public.reap_review_photo_objects()
@@ -584,4 +619,4 @@ These are conscious trade-offs for a free-tier hobby app, not oversights:
 - Cloudflare R2 free tier (10 GB storage, 1M Class A, 10M Class B, $0 egress, permanent): https://developers.cloudflare.com/r2/pricing/
 - GitHub Actions billing (public: free; private Free plan: 2,000 Linux min + 500 MB artifacts): https://docs.github.com/en/actions/concepts/billing-and-usage , https://github.com/pricing
 
-**Unverified items (with tests) flagged inline:** exact HTTP status of a *paused* project (F1 test given); whether deleting a `storage.objects` row reclaims bytes synchronously (F9 test given); PostgREST behavior on a stale JWT vs. anon fallback (F6 test given); current egress split (5 GB DB vs. cached — check the pricing page).
+**Unverified items (with tests) flagged inline:** exact HTTP status of a *paused* project (F1 test given); whether the data is permanently deleted after the 90-day restore window (pausing page does not state it); whether deleting a `storage.objects` row reclaims bytes synchronously (F9 test given); PostgREST behavior on a stale JWT vs. anon fallback (F6 test given). *(Resolved 2026-07-10: the egress split is confirmed as 5 GB database egress + 5 GB cached egress on the pricing page.)*

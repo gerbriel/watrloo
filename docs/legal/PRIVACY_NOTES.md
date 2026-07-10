@@ -6,14 +6,21 @@
 > database migration landed. **Three of the six defects are already fixed**; the
 > analysis is preserved as written, but this table is authoritative.
 >
+> **Re-verified against the current source on 2026-07-10.** Every row below was
+> re-checked against the code; the three "Fixed" statuses are correct (evidence
+> anchors added). D3, D5, and D6 remain open. See the **Citation verification**
+> section immediately below for the legal citations, and note the dated
+> `[UPDATE 2026-07-10]` flags in §§1–2 where the preserved analysis describes the
+> *pre-fix* code.
+>
 > | ID | Defect | Status |
 > | --- | --- | --- |
-> | D1 | Username derived from the email local part | **Fixed** — opaque fallback in `handle_new_user` |
-> | D2 | Photos uploaded with EXIF (incl. GPS) intact | **Fixed** — `compressImage()` re-encodes via canvas before upload, which strips all metadata |
+> | D1 | Username derived from the email local part | **Fixed (verified)** — the second migration's `handle_new_user` drops the `split_part(new.email,'@',1)` fallback and mints an opaque handle `'user_' || encode(gen_random_bytes(5),'hex')` instead (`supabase/migrations/20260710010000_search_geo_privacy.sql:15-57`). The email is never used. |
+> | D2 | Photos uploaded with EXIF (incl. GPS) intact | **Fixed (verified)** — `compressImage()` re-encodes **every** file through a `<canvas>` and never returns the original; there is no small-file passthrough and it fails closed (`src/lib/image.ts:63-111`). Canvas `toBlob()` encodes only the pixel bitmap, so EXIF/GPS is dropped (MDN, verified). `PhotoUploader` calls it on every file (`PhotoUploader.tsx:71`) and `ReviewForm` uploads only those compressed files (`ReviewForm.tsx:48,95-96`), so no raw file reaches storage. |
 > | D3 | Public, correlatable per-user review history | **Open by design** — inherent to a public directory; disclosed in the policy |
-> | D4 | Map leaked user IPs to the OpenStreetMap tile CDN | **Fixed** — replaced with a self-hosted PMTiles basemap; no third-party request remains |
-> | D5 | Account deletion orphans storage objects | **Open** — no account-deletion flow exists yet |
-> | D6 | Public photo path embeds the uploader's uid | **Open** (low) |
+> | D4 | Map leaked user IPs to the OpenStreetMap tile CDN | **Fixed (verified)** — the map is now MapLibre + a self-hosted PMTiles archive (`src/lib/basemap.ts`, `src/components/map/BathroomMap.tsx`). A grep confirms **no** request to `tile.openstreetmap.org` or `protomaps.github.io` remains; the only OSM/Protomaps strings are click-only attribution links. If unconfigured, it falls back to a flat background with no third-party request; if configured, basemap assets are served from storage you control (e.g. Cloudflare R2 — then Cloudflare is a processor, see §6). |
+> | D5 | Account deletion orphans storage objects | **Open (verified still open)** — no account-deletion flow exists; only per-photo delete removes storage objects (`src/lib/api/photos.ts:52-63`). |
+> | D6 | Public photo path embeds the uploader's uid | **Open (low)** — path is still `<uid>/<uuid>.ext` (`src/lib/api/photos.ts:23`). |
 
 > # ⚠️ NOT LEGAL ADVICE — HAVE A LAWYER REVIEW THIS
 >
@@ -37,6 +44,42 @@
 
 ---
 
+## Citation verification (independently re-checked 2026-07-10)
+
+> **This is a fact-check of the citations in this document, not legal advice.** Each
+> statutory/regulatory claim below was opened against a primary source and compared to
+> what the document says. Status legend: **CONFIRMED** (primary source matches),
+> **CORRECTED** (figure/letter fixed inline, dated), **UNVERIFIED** (no primary source
+> found — treat as unreliable), **REMOVED** (deleted as unverifiable). A confidently
+> wrong citation is worse than none; nothing here is a final legal conclusion.
+>
+> **Headline finding:** every citation in this document verified. Notably, the three
+> "often-hallucinated" case references (Latombe, its CJEU appeal, and the June 2026
+> SCOTUS FTC ruling) are all **real** and are cited correctly. The only changes are to
+> *pin subsection letters* the document previously left general and to *confirm one
+> inflation figure*.
+
+| # | Claim in this doc | Status | Primary source | Note |
+|---|---|---|---|---|
+| 1 | CCPA 100,000-consumer prong is worded **"buys, sells, or shares"** (mere collection never trips it) | **CONFIRMED** | Cal. Civ. Code **§ 1798.140(d)(1)(B)** — leginfo.legislature.ca.gov | Exact text: *"Alone or in combination, annually buys, sells, or shares the personal information of 100,000 or more consumers or households."* The reading holds: a purely-collecting app cannot trip this prong. |
+| 2 | Revenue prong is **>$25,000,000**, inflation-adjusted to **~$26.625M** | **CONFIRMED / letters pinned** | § 1798.140(d)(1)(A); CPPA CPI adjustment — cppa.ca.gov/regulations/cpi_adjustment.html | Statutory figure $25,000,000; CPPA-adjusted figure is **$26,625,000, effective 2025-01-01**. |
+| 3 | Data-sale-revenue prong is **≥50%** from selling/sharing | **CONFIRMED / letter pinned** | § 1798.140(d)(1)(C) — leginfo | *"Derives 50 percent or more of its annual revenues from selling or sharing consumers' personal information."* |
+| 4 | GDPR **Art. 3(2)** territorial scope; payment irrelevant; **Recital 23** — mere accessibility insufficient | **CONFIRMED** | gdpr-info.eu/art-3-gdpr, /recitals/no-23 | Art. 3(2)(a) *"irrespective of whether a payment … is required"*; Recital 23: *"The mere accessibility … is insufficient to ascertain such intention."* |
+| 5 | CPRA **precise geolocation** = within **1,850 feet**; is **sensitive PI** | **CONFIRMED / letters pinned** | § 1798.140(**w**) and (**ae**) — leginfo | (w): *"a circle with a radius of 1,850 feet"*; (ae)(1)(C) lists *"A consumer's precise geolocation"* as sensitive PI. The document previously cited § 1798.140 generally; letters now pinned. |
+| 6 | GDPR **Art. 8** consent age default **16**, floor **13**; COPPA is **under-13**; not conflated | **CONFIRMED** | gdpr-info.eu/art-8-gdpr; 15 U.S.C. § 6501(1) & 16 CFR § 312.2 | Art. 8(1): default 16, Member States may lower *"not below 13 years."* COPPA "child" = under 13. (FTC's own COPPA page returned HTTP 403 during the check; the under-13 threshold is settled statutory law.) |
+| 7 | **Art. 28** requires a written processor contract (DPA); Supabase & Cloudflare publish DPAs | **CONFIRMED** | gdpr-info.eu/art-28-gdpr; supabase.com/legal/dpa; cloudflare.com/cloudflare-customer-dpa | Art. 28(3)+(9): binding contract, in writing. Supabase publishes a DPA (landing page confirmed; **its SCC/UK-addendum/SOC 2 particulars should be confirmed against the executed DPA PDF, not assumed**). Cloudflare DPA **v6.4 (eff. 2026-04-03)** incorporates EU SCCs and states DPF certification. |
+| 8 | EU–US **DPF** unsettled: Decision (EU) **2023/1795**; **Latombe T-553/23** dismissed 3 Sep 2025; appeal **C-703/25 P** pending; **29 Jun 2026 SCOTUS** FTC-removal ruling | **CONFIRMED (all four)** | curia.europa.eu (press release CP 106/25); EUR-Lex 62025CN0703 (C-703/25 P); SCOTUS *Trump v. Slaughter*, decided 2026-06-29 (SCOTUSblog/NPR/CNBC) | Adequacy Decision 2023/1795 adopted 2023-07-10. General Court dismissed *Latombe* on **2025-09-03**. Latombe filed the appeal **2025-10-31** (C-703/25 P), accepted, no hearing date as of May 2026 — **pending** is accurate. SCOTUS 6-3 in *Trump v. Slaughter* overruled *Humphrey's Executor*, allowing removal of FTC commissioners. The doc's inference that this "raises fresh doubt" about DPF is commentary, not a holding — kept as such. |
+| 9 | Publishing an inaccurate policy can be an **FTC Act § 5** deceptive practice | **CONFIRMED** | 15 U.S.C. **§ 45(a)(1)** — law.cornell.edu/uscode/text/15/45 | *"unfair or deceptive acts or practices in or affecting commerce, are hereby declared unlawful."* Applying § 5 to broken privacy promises is long-standing FTC enforcement doctrine. |
+| 10 | **"We do not sell or share"** is binding once published; what falsifies it | **CONFIRMED** | § 1798.140(**ad**) "sell", (**ah**) "share"; 15 U.S.C. § 45 | "Sell" = disclosure *"for monetary or other valuable consideration"* (ad); "share" = disclosure *"for cross-context behavioral advertising, whether or not for monetary or other valuable consideration"* (ah). Adding an ad pixel / cross-context analytics SDK / data partnership would falsify the statement and is itself the § 5 violation. |
+| 11 | GPC is a mandatory opt-out; **Sephora** settlement | **CONFIRMED** | oag.ca.gov press release; § 1798.120(c) | AG settlement with Sephora **2022-08-24**, $1.2M, for (among other things) not honoring **Global Privacy Control** as an opt-out. Minors: § 1798.120(c) — a 13–15 consumer opts in themselves; a parent opts in for under-13s. |
+
+**Net corrections applied to this document:** subsection letters pinned in §§2–4 and §8
+((d), (w), (ae), (ad), (ah)); the inflation-adjusted revenue figure dated to
+**$26,625,000, eff. 2025-01-01**; the COPPA source note flags that the FTC page was
+unreachable at check time. No citation had to be removed as unverifiable.
+
+---
+
 ## 0. TL;DR for the owner
 
 1. **The app collects very little, and that is your biggest compliance asset.** No
@@ -44,13 +87,18 @@
    first-party auth session. Keep it that way.
 2. **But there are real code-level privacy defects that a policy cannot paper
    over** (see §2). Fix these *before* publishing a policy, because a policy that
-   describes a leaky app is worthless and is itself a liability. The two that
-   matter most:
-   - **Photos are uploaded with their EXIF metadata intact to a *public* bucket.**
-     A phone photo can carry the exact GPS coordinates where it was taken. This is
-     a precise-geolocation leak. **HIGH.**
-   - **Usernames can be derived from the email address on a world-readable table.**
-     **MEDIUM–HIGH (latent).**
+   describes a leaky app is worthless and is itself a liability. **[UPDATE 2026-07-10:
+   the two highest-value ones below — and the map-CDN leak — have since been FIXED in
+   the code; see the Remediation status table and Citation verification above. The bullets
+   are kept to explain the risk. The one that remains open is D5, incomplete photo-file
+   deletion on account erasure.]** The two that mattered most:
+   - **Photos were uploaded with their EXIF metadata intact to a *public* bucket.**
+     A phone photo can carry the exact GPS coordinates where it was taken — a
+     precise-geolocation leak. **HIGH.** ✅ **Now fixed** (D2): images are re-encoded
+     client-side, which strips EXIF/GPS, before upload.
+   - **Usernames could be derived from the email address on a world-readable table.**
+     **MEDIUM–HIGH (latent).** ✅ **Now fixed** (D1): the email fallback was removed;
+     the fallback is an opaque random handle.
 3. **CCPA/CPRA almost certainly does *not* legally apply to you today** (you are
    below every threshold, and one threshold is impossible to hit unless you sell/
    share data — see §3). **GDPR probably does not automatically apply just because
@@ -79,10 +127,10 @@ visitor can read it, because the table's row-level-security SELECT policy is
 | 6 | **Bathroom entries** (name, address, lat, lng, description, 4 amenity flags, `created_by`) | `public.bathrooms` (`…init.sql:21-36`) | **World-readable** — policy at `…init.sql:170-171` | Core directory content | Indefinite (no deletion policy) |
 | 7 | **Reviews** (rating, 3 optional sub-scores, free-text body, timestamps, `bathroom_id`, `author_id`) | `public.reviews` (`…init.sql:46-58`) | **World-readable** — policy at `…init.sql:183-184`; indexed by author at `…init.sql:61` | Core review content | Until user deletes it (delete policy `…init.sql:195-197`) |
 | 8 | **Review photos — DB pointer** (`storage_path`, which embeds the uploader's uid, e.g. `<uid>/<uuid>.jpg`) | `public.review_photos` (`…init.sql:66-71`); path built at `src/lib/api/photos.ts:23` | **World-readable** — policy at `…init.sql:200-201` | Link row → image file | Until review/photo deleted |
-| 9 | **Review photos — image files** | Supabase Storage bucket `review-photos`, declared **`public = true`** (`…init.sql:225-230`), public-read policy (`…init.sql:232-234`) | **Anyone with the URL — fully public, indexable.** Uploaded **raw** at `src/lib/api/photos.ts:25-31` (no EXIF stripping — see Defect D2) | Show photos on reviews | Files persist even after account row deletion — see Defect D5 |
+| 9 | **Review photos — image files** | Supabase Storage bucket `review-photos`, declared **`public = true`** (`…init.sql:225-230`), public-read policy (`…init.sql:232-234`) | **Anyone with the URL — fully public, indexable.** ~~Uploaded **raw**~~ **[UPDATE 2026-07-10: now re-encoded client-side via `compressImage()`, which strips EXIF/GPS before upload — D2 fixed]** at `src/lib/api/photos.ts:25-31` | Show photos on reviews | Files persist even after account row deletion — see Defect D5 (still open) |
 | 10 | **Auth session token (JWT access + refresh token)** | Browser **`localStorage`** (key `sb-<project-ref>-auth-token`) — implied by `persistSession: true` with default storage at `src/lib/supabase.ts:12-18` | The user's own browser only | Keep the user signed in | Until logout / token expiry. **First-party, strictly necessary — not a cookie.** |
 | 11 | **Theme preference** | Browser `localStorage` key `watrloo-theme` (`index.html:18`, `src/components/layout/ThemeToggle.tsx:15-41`) | The user's own browser only | Remember light/dark choice | Persistent; not personal data |
-| 12 | **IP address + request logs** | Not stored by the app itself, but **processed by every processor** the browser talks to: Supabase (auth/DB/storage — every call in `src/lib/api/*`), and the **OpenStreetMap tile CDN** today (`src/components/map/BathroomMap.tsx:145`) / Cloudflare R2 under the intended basemap plan | The relevant processor | Inherent to serving HTTP | Governed by each processor's own policy |
+| 12 | **IP address + request logs** | Not stored by the app itself, but **processed by every processor** the browser talks to: Supabase (auth/DB/storage — every call in `src/lib/api/*`), and — **[UPDATE 2026-07-10: the OpenStreetMap tile CDN is no longer called (D4 fixed); the basemap is now self-hosted PMTiles, so the only map-tile processor is whatever host serves `VITE_BASEMAP_URL`/`VITE_BASEMAP_ASSETS_URL`, e.g. Cloudflare R2 — and none at all if those are unset]** | The relevant processor | Inherent to serving HTTP | Governed by each processor's own policy |
 
 **Note on the auth token (matters for the cookie-banner analysis):** the Supabase
 client is configured with `persistSession: true` and the default storage adapter
@@ -99,6 +147,14 @@ tracking** (see §5).
 A policy cannot fix these — code has to. Fixes are **proposed here only**; per the
 work rules I did not modify any source file.
 
+> **[UPDATE 2026-07-10 — read before the sub-sections below.]** This section is the
+> *original* audit, preserved as written. Since it was written, **D1, D2, and D4 have
+> been fixed in the code** (confirmed — see the Remediation status table and Citation
+> verification above). The present-tense statements in **D1, D2, and D4 below describe
+> the pre-fix code and are no longer literally true**; they are kept for the record and
+> flagged inline. **D3, D5, and D6 remain open.** Do not read "there is no EXIF
+> stripping" or "the live map loads OSM tiles" as descriptions of the current build.
+
 ### D1 — Username can be derived from the email address, on a world-readable table · **MEDIUM–HIGH (latent)**
 
 **Evidence.** The `handle_new_user` trigger sets the username from signup metadata,
@@ -111,6 +167,15 @@ desired := coalesce(
   split_part(new.email, '@', 1)        -- <-- the part of the email before "@"
 );
 ```
+
+> **[UPDATE 2026-07-10 — D1 is FIXED; the code block above is the superseded first
+> migration.]** The second migration
+> (`supabase/migrations/20260710010000_search_geo_privacy.sql:15-57`) replaces
+> `handle_new_user` and **removes** `split_part(new.email,'@',1)` entirely. The
+> fallback is now an opaque handle, `'user_' || encode(gen_random_bytes(5),'hex')`, so
+> no part of any email address can reach the world-readable `profiles` table via the
+> username. The "latent" concern below is therefore resolved for the email vector; the
+> broader "stop `select('*')`-ing the whole row" defense-in-depth note still stands.
 
 `public.profiles` is world-readable (`using (true)`, `…init.sql:157-158`) and every
 column is exposed via `select('*')` (`src/auth/AuthProvider.tsx:84`,
@@ -160,10 +225,22 @@ The bucket is declared **`public = true`** (`…init.sql:225-230`) with public r
 (`src/lib/api/photos.ts:47-50`). **There is no EXIF/metadata stripping anywhere** —
 a grep for `exif|canvas|createImageBitmap|strip|metadata` in `src/` returns nothing.
 
+> **[UPDATE 2026-07-10 — D2 is FIXED; this paragraph is historical.]** The code now
+> re-encodes **every** uploaded image through a `<canvas>` in `compressImage()`
+> (`src/lib/image.ts:63-111`), with **no** small-file passthrough and a fail-closed
+> path that never returns the caller's original `File`. `canvas.toBlob()` serializes
+> only the canvas pixel bitmap — which has no container for EXIF — so GPS and device
+> metadata are dropped (MDN, verified). `PhotoUploader` runs this on every file
+> (`PhotoUploader.tsx:71`) and `ReviewForm` uploads only the compressed results
+> (`ReviewForm.tsx:48,95-96`). The grep quoted above now hits `canvas`,
+> `createImageBitmap`, and `strip`/`metadata` in `src/lib/image.ts`.
+
 **Why it matters.** Photos taken on phones commonly embed **EXIF GPS coordinates**
 (the exact spot the picture was taken), plus camera make/model/serial and a precise
 timestamp. Under California law, **precise geolocation — location within a ~1,850-foot
-radius — is "sensitive personal information"** (Cal. Civ. Code § 1798.140; verified).
+radius — is "sensitive personal information"** (Cal. Civ. Code § 1798.140(**w**)
+defines precise geolocation as *"a circle with a radius of 1,850 feet"*; § 1798.140(**ae**)(1)(C)
+lists precise geolocation as sensitive PI; both verified 2026-07-10).
 Publishing user photos with GPS intact means the app is republishing users' precise
 location and device fingerprints at a public, indexable URL, without their
 knowledge. This is the single most serious privacy issue in the codebase.
@@ -206,6 +283,16 @@ servers:
   attribution='&copy; … OpenStreetMap contributors'
   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 ```
+
+> **[UPDATE 2026-07-10 — D4 is FIXED; the code block above is historical.]** The map
+> no longer uses Leaflet or `tile.openstreetmap.org`. It is now MapLibre reading a
+> self-hosted PMTiles archive (`src/lib/basemap.ts`, `src/components/map/BathroomMap.tsx`);
+> a grep finds **no** request to `tile.openstreetmap.org` or `protomaps.github.io`.
+> The remaining "openstreetmap.org/copyright" and "protomaps.com" strings are
+> click-only attribution `<a>` links (ODbL requires attribution), not automatic tile
+> fetches. With no basemap env vars set, the map degrades to a flat background with no
+> third-party request at all. The residual processor concern below (Cloudflare, if the
+> archive is hosted on R2) still applies and is handled in §6.
 
 **Why it matters.** Every map view sends the user's **IP address** and the tile
 coordinates they are viewing (i.e., *where on the map they are looking*) to the
@@ -269,9 +356,9 @@ meets **at least one** of three thresholds (verified against the statute):
 
 | Prong | Threshold (verified) | Watrloo today |
 |---|---|---|
-| (1) Revenue | Annual gross revenue **> $25,000,000** (statutory figure; the CPPA adjusts it for inflation — ~**$26.625M** for 2025). Not limited to California revenue. | **No** — a hobby app has ~$0 revenue |
-| (2) Volume | **"annually buys, sells, or shares the personal information of 100,000 or more"** consumers/households | **No** — and note the exact verb: the trigger is **buy/sell/share**, *not* mere collection. If you never buy, sell, or share, **this prong is not met no matter how many users you have.** |
-| (3) Data-sale revenue | Derives **≥ 50%** of annual revenue from **selling or sharing** personal information | **No** — you have decided not to sell/share (§4) |
+| (1) Revenue — **§ 1798.140(d)(1)(A)** | Annual gross revenue **> $25,000,000** (statutory figure). The CPPA adjusts it for inflation: the current figure is **$26,625,000, effective 2025-01-01** (CPPA CPI adjustment; verified 2026-07-10). Not limited to California revenue. | **No** — a hobby app has ~$0 revenue |
+| (2) Volume — **§ 1798.140(d)(1)(B)** | Exact text (verified verbatim 2026-07-10): **"annually buys, sells, or shares the personal information of 100,000 or more consumers or households."** | **No** — and note the exact verb: the trigger is **buys/sells/shares**, *not* mere collection. If you never buy, sell, or share, **this prong is not met no matter how many users you have.** |
+| (3) Data-sale revenue — **§ 1798.140(d)(1)(C)** | **"Derives 50 percent or more of its annual revenues from selling or sharing consumers' personal information"** (verified). | **No** — you have decided not to sell/share (§4) |
 
 **Conclusion (subject to counsel):** as a non-commercial, non-selling hobby project
 below $25M, **Watrloo meets none of the three prongs, so the CCPA/CPRA does not
@@ -378,10 +465,11 @@ tracking, loyalty programs, financial data, biometric data.
 > is deliberately short: it justifies the decision rather than teaching how to sell.
 
 **Why "we don't sell or share" is the right call and the simpler one.** Under Cal.
-Civ. Code § 1798.140, **"sell"** is disclosing personal information to a third party
-for **monetary *or other valuable* consideration** (broader than cash changing
-hands), and **"share"** is disclosing it to a third party for **cross-context
-behavioral advertising, whether or not for money** (both verified). The instant you
+Civ. Code § 1798.140(**ad**), **"sell"** is disclosing personal information to a third
+party for **monetary *or other valuable* consideration** (broader than cash changing
+hands), and under § 1798.140(**ah**) **"share"** is disclosing it to a third party for
+**cross-context behavioral advertising, whether or not for money** (both verified
+verbatim 2026-07-10). The instant you
 do either, a stack of obligations attaches: a **"Do Not Sell or Share My Personal
 Information"** link, a working opt-out, honoring **Global Privacy Control** browser
 signals (California treats GPC as a mandatory opt-out — established by the AG's 2022
@@ -451,9 +539,12 @@ comment). Grepping for `cookie|document.cookie` returns **nothing**; the only br
 storage is `localStorage` for the **auth token** (`src/lib/supabase.ts:12-18`) and
 the **theme** (`src/components/layout/ThemeToggle.tsx`, `index.html:18`). Grepping for
 `geolocation|getCurrentPosition|watchPosition` returns **nothing** — **the app never
-requests browser geolocation.** (Locations come from the user tapping the map:
-`src/components/map/BathroomMap.tsx:90-97`.) The one outbound third-party call today
-is the **OSM tile CDN** (Defect D4).
+requests browser geolocation.** (Locations come from the user tapping the map: the
+click handler in `src/components/map/BathroomMap.tsx`, re-verified 2026-07-10.)
+**[UPDATE 2026-07-10: re-verified — no cookies, no analytics/pixels, no geolocation in
+the current build. The former OSM-tile-CDN outbound call (Defect D4) is GONE; the map
+now reads a self-hosted PMTiles basemap, so the only outbound hosts are Supabase and —
+if configured — whatever serves the basemap assets (e.g. Cloudflare R2).]**
 
 **Implication:** because the only device storage is strictly-necessary and
 first-party, **no cookie-consent banner is legally required today.** Preserve this.
@@ -467,8 +558,8 @@ written data-processing agreement with each — verified). Name them in the poli
 
 | Processor | Role | What it processes | DPA available? | International transfer mechanism |
 |---|---|---|---|---|
-| **Supabase** | Auth, Postgres DB, Storage, logs | Email, hashed password, all DB content, uploaded photos, **IP addresses**, request logs | **Yes** — Supabase publishes a DPA incorporating the EU **SCCs** (+ UK addendum); SOC 2 Type 2 (verified). **Sign/accept it.** | Project region is **US (`us-west-1`)**, so for EU users this is a **restricted transfer**. Rely on Supabase's **SCCs** and/or the **EU–US Data Privacy Framework** if Supabase self-certifies. Data stays in the chosen region. |
-| **Cloudflare** (planned R2 basemap host) | Static basemap (PMTiles) hosting/CDN | **IP addresses** of anyone loading the map | **Yes** — Cloudflare publishes a customer DPA incorporating **SCCs**; Cloudflare is **DPF-certified** (verified). | SCCs / DPF as above. **Execute the DPA before going live.** |
+| **Supabase** | Auth, Postgres DB, Storage, logs | Email, hashed password, all DB content, uploaded photos, **IP addresses**, request logs | **Yes — a DPA is published** (supabase.com/legal/dpa; existence verified 2026-07-10). Its **SCC / UK-addendum / SOC 2** particulars are stated in the DPA document itself and were **not** independently confirmed from the public landing page — **read and accept the actual DPA PDF, do not assume these.** | Project region is **US (`us-west-1`)**, so for EU users this is a **restricted transfer**. Rely on Supabase's **SCCs** and/or the **EU–US Data Privacy Framework** if Supabase self-certifies. Data stays in the chosen region. |
+| **Cloudflare** (planned R2 basemap host) | Static basemap (PMTiles) hosting/CDN | **IP addresses** of anyone loading the map | **Yes — verified 2026-07-10.** Cloudflare's customer DPA **v6.4 (eff. 2026-04-03)** incorporates the **EU SCCs** and states Cloudflare **complies with the Data Privacy Framework**. | SCCs / DPF as above. **Execute the DPA before going live.** |
 | **OpenStreetMap Foundation tile CDN** | *Current* map tiles (Defect D4) | **IP addresses** + tiles viewed | **No contract** — this is the problem. | None. **Migrate off it** (self-host via Cloudflare R2). |
 
 > ⚠️ **International-transfer reality check (genuinely unsettled as of July 2026).**
@@ -476,8 +567,12 @@ written data-processing agreement with each — verified). Name them in the poli
 > Decision (EU) **2023/1795**) is **still formally in force**, and the EU General
 > Court **dismissed** the *Latombe* challenge on **3 Sept 2025 (T-553/23)** — but
 > that ruling is **under appeal at the CJEU (C-703/25 P, pending)**, and a **29 June
-> 2026 US Supreme Court ruling** on the President's power to remove FTC commissioners
-> has raised fresh doubt about the FTC-independence assumptions the DPF rests on. In
+> 2026 US Supreme Court ruling** (*Trump v. Slaughter*, overruling *Humphrey's
+> Executor*) on the President's power to remove FTC commissioners has raised fresh
+> doubt about the FTC-independence assumptions the DPF rests on. **(All four
+> references — Decision 2023/1795, T-553/23, C-703/25 P, and the 2026-06-29 SCOTUS
+> ruling — were verified against primary/reputable sources on 2026-07-10; see Citation
+> verification. The DPF-doubt inference is our commentary, not a court holding.)** In
 > short: **do not treat DPF as bulletproof.** The safer belt-and-suspenders posture
 > is to rely on your processors' **Standard Contractual Clauses** (which both
 > Supabase and Cloudflare provide) as the primary transfer mechanism, with DPF as a
@@ -543,10 +638,15 @@ liability):**
 - **GDPR Art. 28 (processor DPA):** https://gdpr-info.eu/art-28-gdpr/
 - **GDPR Recital 26 (anonymous vs pseudonymous):** https://gdpr-info.eu/recitals/no-26/
 - **EU–US Data Privacy Framework (status, program):**
-  https://www.dataprivacyframework.gov/Program-Overview ; EDPB FAQ:
-  https://www.edpb.europa.eu/ ; *Latombe* General Court (T-553/23, dismissed 3 Sep
-  2025) & appeal (C-703/25 P, pending), plus 29 Jun 2026 US Supreme Court FTC ruling
-  (reported via legal analyses).
+  https://www.dataprivacyframework.gov/Program-Overview ; adequacy Decision (EU)
+  2023/1795 (adopted 2023-07-10). **All case references verified 2026-07-10:**
+  *Latombe v Commission* General Court **T-553/23**, action **dismissed 2025-09-03**
+  (Court of Justice press release CP 106/25, curia.europa.eu); appeal **C-703/25 P**,
+  filed 2025-10-31, **pending** (EUR-Lex 62025CN0703,
+  https://eur-lex.europa.eu/eli/C/2025/6610/oj/eng); and **SCOTUS *Trump v. Slaughter***,
+  decided **2026-06-29** (6-3, overruling *Humphrey's Executor*, allowing removal of
+  FTC commissioners) — reported by SCOTUSblog, NPR, CNBC. The doc's inference that this
+  ruling unsettles DPF is commentary, not a holding.
 - **FTC Act Section 5 (deceptive practices):** 15 U.S.C. § 45 —
   https://www.ftc.gov/news-events/topics/protecting-consumer-privacy-security/privacy-security-enforcement
 - **COPPA (children under 13):** 15 U.S.C. §§ 6501–6506 —
@@ -558,5 +658,8 @@ liability):**
 
 > **Reminder:** citations were checked against the sources above, but statutes are
 > amended and case law moves (especially DPF). Treat every citation as a starting
-> point for your attorney, not a final answer. Specific subsection *letters* within
-> § 1798.140 were not individually pinned and should be confirmed by counsel.
+> point for your attorney, not a final answer. Subsection *letters* within
+> § 1798.140 have now been individually pinned (business thresholds **(d)**, precise
+> geolocation **(w)**, sensitive PI **(ae)**, "sell" **(ad)**, "share" **(ah)** — see
+> Citation verification), but the statute is renumbered from time to time, so counsel
+> should confirm the letters and current text against the live code section.

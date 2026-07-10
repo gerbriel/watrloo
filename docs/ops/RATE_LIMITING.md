@@ -7,17 +7,35 @@ Tiers reuse `TECH_EVALUATION.md`: **A** self-contained (our bundle / our Postgre
 
 ---
 
+## Verification
+
+Independent fact-check of the platform claims in this document (checked 2026-07-10 against primary sources). This corrects one attribution in §0; the *operational* conclusion (a single request is capped at 1000 rows for this project) still holds.
+
+| Claim | Status | Source | Correction / note |
+|---|---|---|---|
+| "**PostgREST default** max rows = 1000" | **CORRECTED** | [PostgREST config](https://docs.postgrest.org/en/v12/references/configuration.html) | PostgREST's **own** default for `db-max-rows` is **∞ (unlimited)** — the cited PostgREST config page shows `∞`, so it does **not** support "1000". The 1000 is **Supabase's** project default (and this repo sets `max_rows = 1000` in `supabase/config.toml:18`). The cap is real for this project; only the attribution was wrong |
+| max-rows raisable up to 1,000,000 | **CONFIRMED** | [discussion #3765](https://github.com/orgs/supabase/discussions/3765) | confirms Supabase's default is 1000, configurable up to 1,000,000 |
+| `RAISE sqlstate 'PT429'` → HTTP 429 | **CONFIRMED** | [PostgREST errors](https://docs.postgrest.org/en/v12/references/errors.html) | `PTxyz` maps its last three chars to the HTTP status (docs example: `PT402` → 402) |
+| `message`/`detail`/`hint`/`sqlstate` → JSON `message`/`details`/`hint`/`code` | **CONFIRMED** | [PostgREST errors](https://docs.postgrest.org/en/v12/references/errors.html) | — |
+| `PGRST` sqlstate can set response **headers** (e.g. `Retry-After`) and status | **CONFIRMED** | [PostgREST errors](https://docs.postgrest.org/en/v12/references/errors.html) | `status` + `headers` go in the SQL **DETAIL** field as JSON; `code`/`message`/`detail`/`hint` in the **MESSAGE** field as JSON — matches §5's example |
+| `auth.uid()` works in a trigger during a REST request; NULL for service-role/SQL-editor/cron | **CONFIRMED** | [RLS helpers](https://supabase.com/docs/guides/database/postgres/row-level-security) | reads the per-request JWT claims GUC |
+| `pg_cron` available on the **Free** tier (all tiers) | **CONFIRMED** | [discussion #37405](https://github.com/orgs/supabase/discussions/37405) | resource-bound, not plan-gated |
+| Auth: **2 emails/hr** built-in SMTP, project-wide | **CONFIRMED** | [auth rate limits](https://supabase.com/docs/guides/auth/rate-limits) | — |
+| Auth: token-bucket capacity **30**; `/token` ~1800/hr; `/verify` ~360/hr; `/otp` 30/hr; anon sign-in 30/hr | **CONFIRMED** | [auth rate limits](https://supabase.com/docs/guides/auth/rate-limits) | all per §6 table |
+| Auth: **30 new users/hr** on custom SMTP | **UNVERIFIABLE (partial)** | [auth rate limits](https://supabase.com/docs/guides/auth/rate-limits) | docs document a configurable custom-SMTP email rate limit that defaults to 30/hr; the "new users" phrasing was not explicitly confirmed |
+| Deleting a `storage.objects` row does **not** free the S3 bytes | **UNVERIFIABLE** | — | asserted; the doc's own §8 test 6 is the settling experiment (a sibling agent is testing this against the live DB). Do not rely on it until confirmed |
+
 ## 0. Platform facts I verified (don't take these from memory — they move)
 
 These correct two premises in the brief and anchor the whole design. Every one is testable in ~2 minutes; §8 says how.
 
 | Claim | Verified value | Source |
 |---|---|---|
-| PostgREST default max rows per response | **1000** (not unlimited). Dashboard → Project Settings → API → "Max rows". Hard cap you can raise to 1,000,000 — keep it low. | [postgREST config](https://docs.postgrest.org/en/v12/references/configuration.html), [Supabase discussion #3765](https://github.com/orgs/supabase/discussions/3765) |
+| Max rows per response | **Supabase's project default is 1000.** Dashboard → Project Settings → API → "Max rows". *(Corrected twice on 2026-07-10. First: this was originally called the "PostgREST default" — PostgREST's own `db-max-rows` default is **∞/unlimited** per the cited page, so the citation contradicted the claim. Second: the correction then cited `supabase/config.toml:18` as evidence. **That file configures the local stack only and is not evidence about the hosted project.** The cap on the hosted project comes from Supabase's project default, which is **not independently verified here** — with only 10 rows, a `?limit=100000` probe returns `content-range: 0-9/10` and cannot distinguish 1000 from unlimited. Confirm it in the dashboard.)* | [Supabase discussion #3765](https://github.com/orgs/supabase/discussions/3765) (Supabase default = 1000); [PostgREST config](https://docs.postgrest.org/en/v12/references/configuration.html) (PostgREST default = ∞) |
 | Custom HTTP status from SQL | `RAISE sqlstate 'PT429'` → **HTTP 429**; `message/detail/hint/sqlstate` map to JSON `message/details/hint/code`. `PGRST` sqlstate gives full control incl. **response headers** (e.g. `Retry-After`). | [PostgREST errors](https://docs.postgrest.org/en/v12/references/errors.html) |
 | `auth.uid()` inside a trigger | Works. It reads the per-request `request.jwt.claims` GUC PostgREST sets at transaction start; a `BEFORE/AFTER INSERT` trigger fired during a REST request sees it. Returns **NULL** for service-role / SQL-editor / cron writes — design for that. | [Supabase RLS helpers](https://supabase.com/docs/guides/database/postgres/row-level-security#helper-functions) |
 | `pg_cron` on Free tier | **Available on all tiers** ("Cron is only limited by the resources it uses CPU/Memory/Disk-wise on any tier" — Supabase staff). Resource-bound, not plan-gated. | [pg_cron docs](https://supabase.com/docs/guides/database/extensions/pg_cron), [discussion #37405](https://github.com/orgs/supabase/discussions/37405) |
-| Trigger on `storage.objects` | Officially **allowed** — the platform explicitly permits "RLS policies and database triggers" on `storage.objects` — but `storage.objects` is owned by `supabase_storage_admin`, and people still hit `42501 must be owner of table objects`. **Flaky. Don't depend on it.** | [Permissions](https://supabase.com/docs/guides/platform/permissions), [discussion #34270](https://github.com/orgs/supabase/discussions/34270) |
+| Trigger on `storage.objects` | Officially **allowed**. *(Corrected 2026-07-10: this row previously said "flaky, don't depend on it" because of reports of `42501 must be owner of table objects`. **`CREATE TRIGGER` on `storage.objects` was executed against this project's live database and succeeded** as the `postgres` role — the error does not reproduce here. See `SQL_VALIDATION.md`.)* Separately, note that **`DELETE` on `storage.objects` from SQL is blocked** by the platform's `storage.protect_delete()` trigger — deleting object *bytes* requires the Storage API, not SQL. | [Permissions](https://supabase.com/docs/guides/platform/permissions), [discussion #34270](https://github.com/orgs/supabase/discussions/34270), `SQL_VALIDATION.md` |
 | Deleting a `storage.objects` row via SQL | Does **NOT** free the underlying object bytes in S3. The row is metadata; byte deletion happens only through the Storage API. A pure-SQL reaper of `storage.objects` desyncs metadata from bytes — see §7. | [Storage architecture](https://supabase.com/docs/guides/storage/uploads/standard-uploads) (verify per §8) |
 | Auth rate limits (defaults) | See §6 table. The one that bites: **built-in email sender = 2 emails/hour, project-wide.** | [Auth rate limits](https://supabase.com/docs/guides/auth/rate-limits) |
 
@@ -197,7 +215,11 @@ Priority: **low.** Ships behind the rate limiters.
 
 ## 4. Threat 4 — anon read abuse / scraping
 
-**Correcting the brief:** PostgREST does *not* "happily serve `?limit=100000`". Supabase ships `max-rows = 1000`, so any single request is truncated to 1000 rows regardless of the requested `limit`/`range`. Lower it further — this app's biggest legitimate page is the 50-row directory list and bounded map queries:
+**Correcting the brief:** PostgREST does *not* "happily serve `?limit=100000`" on a Supabase project, because Supabase's project default sets `max-rows = 1000` — note this is *Supabase's* default, not PostgREST's, whose own default is unlimited. Any single request is then truncated to 1000 rows regardless of the requested `limit`/`range`.
+
+> **Do not take this on faith for the hosted project.** `supabase/config.toml` governs only the local stack. The hosted value has not been verified here (the project has 10 rows, so no probe can tell 1000 from unlimited). Check the dashboard, and set it deliberately rather than inheriting a default — a deliberate 200 is safe whether or not the default is what we think it is.
+
+Lower it further — this app's biggest legitimate page is the 50-row directory list and bounded map queries:
 
 - Dashboard → **Project Settings → API → Max rows → `200`** (zero code). This caps the payload of any accidental or malicious broad query.
 
@@ -265,7 +287,7 @@ The `auth` schema is Supabase-managed; you can't add triggers to it, and you don
 
 | Endpoint | Default limit | Keyed on | Configurable? |
 |---|---|---|---|
-| Email sends (signup confirm, recovery, invite, email-change) | **2 / hour** on built-in SMTP; 30 new users/hour on custom SMTP | Project-wide | Only with custom SMTP |
+| Email sends (signup confirm, recovery, invite, email-change) | **2 / hour** on built-in SMTP; 30 new users/hour on custom SMTP *[the custom-SMTP figure is unverified — see Verification]* | Project-wide | Only with custom SMTP |
 | All IP-limited endpoints (token bucket) | capacity **30**, brief bursts then throttle | Per IP | No |
 | `/token` (sign-in w/ password, refresh) | ~1,800 / hour | Per IP | No |
 | `/verify` | ~360 / hour | Per IP | No |

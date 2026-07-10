@@ -79,10 +79,17 @@ entries before you add one.
 
 ## Documentation
 
+The `docs/ops/` files are **designs, not applied changes.** Roles, rate limiting,
+and error tracking do not exist in the code yet. Read `ops/SQL_VALIDATION.md`
+before running any SQL from them — every block was executed against a live
+database, and some of it does not work.
+
 | doc | what's in it |
 | --- | --- |
-| [BASEMAP.md](docs/BASEMAP.md) | Building and hosting the self-contained basemap |
+| [BASEMAP.md](docs/BASEMAP.md) | Building, verifying, and hosting the self-contained basemap |
 | [TECH_EVALUATION.md](docs/TECH_EVALUATION.md) | Dependency choices, with licenses and rejections |
+| [ops/SQL_VALIDATION.md](docs/ops/SQL_VALIDATION.md) | **Every proposed SQL block, executed.** What works, what breaks |
+| [ops/EMAIL.md](docs/ops/EMAIL.md) | Why signup is broken today, and the two ways out |
 | [ops/SECURITY.md](docs/ops/SECURITY.md) | RLS audit: attacks, findings, hardening SQL |
 | [ops/RATE_LIMITING.md](docs/ops/RATE_LIMITING.md) | Abuse surfaces and in-Postgres throttling |
 | [ops/SCALING.md](docs/ops/SCALING.md) | Where this breaks first, with the arithmetic |

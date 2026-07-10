@@ -2,14 +2,23 @@
 
 > # ⚠️ TEMPLATE — NOT LEGAL ADVICE — REVIEW BY COUNSEL BEFORE PUBLISHING
 >
-> This is a **draft template**, not legal advice, and it does not create an
-> attorney–client relationship. It was written to match what the Watrloo app
-> actually does **today** (see `PRIVACY_NOTES.md`). Before you publish it: (1) have
-> a **licensed attorney** (US state privacy + GDPR) review it; (2) **fix the code
-> defects** listed in `PRIVACY_NOTES.md` §2 — several statements below are only true
-> once those fixes ship (they are flagged inline); and (3) fill in every
-> `[PLACEHOLDER]`. Publishing a policy that misdescribes the app is itself unlawful
-> (FTC Act §5; GDPR Arts. 5, 13–14). Do **not** invent the bracketed details.
+> **Nothing in this document is legal advice.** It is a **draft template** written by
+> an engineering assistant, not an attorney, and it does **not** create an
+> attorney–client relationship. It was written to match what the Watrloo app actually
+> does (see `PRIVACY_NOTES.md`). Before you publish it: (1) have a **licensed
+> attorney** (US state privacy + GDPR) review it; (2) confirm the **code defects** in
+> `PRIVACY_NOTES.md` §2 are resolved — some statements below are only true once those
+> fixes ship (they are flagged inline); and (3) fill in every `[PLACEHOLDER]`.
+> Publishing a policy that misdescribes the app is itself unlawful (FTC Act §5, 15
+> U.S.C. § 45; GDPR Arts. 5, 13–14). Do **not** invent the bracketed details.
+>
+> **Code re-check as of 2026-07-10 (see `PRIVACY_NOTES.md`):** Defects **D1**
+> (email-derived username), **D2** (EXIF/GPS in uploaded photos), and **D4** (map
+> tiles from a third-party CDN) are **fixed** in the current source, so the statements
+> below that depended on them are now accurate — but a lawyer must still confirm the
+> wording. Defect **D5** (account deletion does not remove stored photo *files*)
+> **remains open**: the deletion promise in §7 is **not yet true** and is flagged
+> there. **This re-check is a fact-check of the code, not legal advice.**
 
 **Effective date:** `[EFFECTIVE DATE]`
 **Operator:** `[LEGAL ENTITY / OPERATOR NAME]` ("Watrloo," "we," "us")
@@ -45,18 +54,25 @@ and the rights you have.
 - **Account details:** your **email address** and a **password** when you sign up.
   Your password is stored only in **hashed** form by our authentication provider; we
   never see or store it in plaintext.
-- **Username:** a public display name. `[DECISION NEEDED: after fixing Defect D1
-  (PRIVACY_NOTES §2), confirm the username is either chosen by the user or a random
-  handle — it must NOT be derived from the email address.]`
+- **Username:** a public display name that you choose at sign-up. If you sign up by a
+  method that does not supply one, we generate a **random handle** (e.g. `user_1a2b3c4d`);
+  **we never derive your username from your email address.** `[DECISION NEEDED:
+  Defect D1 is fixed in the current code as of 2026-07-10 — the email-local-part
+  fallback was removed and replaced with an opaque random handle. Confirm this remains
+  true (and applies to any future OAuth/magic-link sign-up) before relying on this
+  sentence.]`
 - **Reviews and ratings:** the overall rating, optional sub-scores (cleanliness,
   privacy, accessibility), and any free-text review you write.
 - **Bathroom entries:** if you add a bathroom, the name, address, map location, and
   amenity details you provide.
-- **Photos (optional):** images you attach to a review.
-  `[DECISION NEEDED: this section assumes Defect D2 is fixed so that photo metadata
-  (including any GPS location and device information) is stripped before upload. Do
-  NOT publish this policy while raw photos with EXIF GPS are being uploaded to a
-  public bucket.]`
+- **Photos (optional):** images you attach to a review. Before a photo leaves your
+  device, we **re-encode it in your browser**, which resizes it and **removes embedded
+  metadata — including any GPS location and camera/device information (EXIF)** — so
+  that data is not published with your photo. `[DECISION NEEDED: Defect D2 is fixed in
+  the current code as of 2026-07-10 — every uploaded image is re-encoded through a
+  canvas (which drops EXIF/GPS) with no small-file passthrough; see PRIVACY_NOTES §2.
+  Confirm this before publishing. Do NOT publish this sentence if that path is ever
+  bypassed.]`
 
 **b. Information collected automatically**
 
@@ -98,7 +114,7 @@ advertisers, data brokers, or partners for their own purposes.
 | Provider | What they do for us | What they process |
 |---|---|---|
 | **Supabase** | Hosts our database, authentication, and photo storage | Email, hashed password, all content you post, photos, IP addresses, logs |
-| **Cloudflare** | Hosts the map's base imagery | IP address of anyone loading the map `[DECISION NEEDED: include only once the self-hosted map on Cloudflare is live (Defect D4). Until then the map's base imagery is served by the OpenStreetMap Foundation's tile servers, which receive your IP address; disclose whichever is actually in production.]` |
+| **Cloudflare** *(only if the basemap is hosted there)* | Hosts the map's base imagery (a self-hosted map data file) | IP address of anyone loading the map `[DECISION NEEDED: Defect D4 is fixed as of 2026-07-10 — the map no longer calls the OpenStreetMap tile servers; it loads a self-hosted map archive. Name here **whatever host actually serves that archive** (e.g. Cloudflare R2). If no basemap host is configured, the map shows locations on a plain background and **no third party receives your IP for the map**, so remove this row. Disclose whichever is actually in production.]` |
 
 We may also disclose information if **required by law** (e.g., a valid legal request),
 or to protect the rights, safety, or property of our users or us.
@@ -130,9 +146,15 @@ above.
   retention schedules.
 
 When you delete your account, we delete your account data and the content you posted,
-**including your uploaded photo files.** `[DECISION NEEDED: this is only true once
-Defect D5 is fixed so that account deletion also removes the user's stored photo
-files; until then, describe the actual (possibly manual) process honestly.]`
+**including your uploaded photo files.** `[DECISION NEEDED — ⚠️ NOT TRUE YET: Defect
+D5 is STILL OPEN as of 2026-07-10. There is no self-serve account-deletion flow, and
+deleting a user cascades the database rows but does NOT delete the photo *files* in
+storage — they remain public at their URLs. Do NOT publish this sentence as written.
+Either (a) fix D5 so account deletion also removes the user's `review-photos/<uid>/`
+storage prefix, or (b) rewrite this to describe the actual, possibly manual, process
+honestly (e.g. "email us and we will delete your account and photo files within X
+days"). A false erasure promise is an FTC Act §5 problem and defeats a GDPR Art. 17 /
+CCPA deletion request.]`
 
 ## 8. We do not sell or share your personal information
 
@@ -166,11 +188,12 @@ bathrooms you add, and any photos you attach are visible to anyone**, including 
 who are not signed in, and may be indexed by search engines. Anyone can view the set
 of reviews associated with your username.
 
-Please do not include anything you consider private in a review or photo — including
-faces, license plates, documents, or your home. `[DECISION NEEDED: this section
-assumes photo location metadata is stripped before upload (Defect D2). Do not rely on
-this while raw photos are uploaded.]` You can edit or delete your own reviews and
-photos at any time.
+We strip hidden location and device metadata (EXIF/GPS) from photos before upload, but
+that does **not** hide what is *visible* in the image. Please do not include anything
+you consider private in a review or photo — including faces, license plates, documents,
+or your home. `[DECISION NEEDED: the metadata-stripping statement depends on Defect D2,
+which is fixed as of 2026-07-10 (PRIVACY_NOTES §2). Confirm it still holds before
+publishing.]` You can edit or delete your own reviews and photos at any time.
 
 ## 11. Your rights
 

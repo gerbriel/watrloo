@@ -50,15 +50,17 @@ export function publicPhotoUrl(storagePath: string): string {
 }
 
 export async function deleteReviewPhoto(photo: ReviewPhoto): Promise<void> {
-  // Remove the DB row first (RLS-guarded via the parent review), then the object.
+  // Object first, row second. If the object delete fails we abort with the row
+  // intact and a retry still works. The reverse order strands the bytes with
+  // nothing pointing at them — an invisible, permanent leak against the quota.
+  const { error: storageError } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .remove([photo.storage_path]);
+  if (storageError) throw storageError;
+
   const { error } = await supabase
     .from('review_photos')
     .delete()
     .eq('id', photo.id);
   if (error) throw error;
-
-  const { error: storageError } = await supabase.storage
-    .from(STORAGE_BUCKET)
-    .remove([photo.storage_path]);
-  if (storageError) throw storageError;
 }

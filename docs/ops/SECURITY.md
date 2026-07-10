@@ -27,9 +27,46 @@ Threat model: the repo is **public** and the anon (publishable) key ships in the
 GraphQL (`/graphql/v1`), Storage, and Auth directly — not just through the app UI. Every control
 that matters must hold at the API boundary, not in the React code. RLS reads are intentionally
 public (it's a directory); the audit assumes the attacker is an authenticated user with a
-throwaway account (signup is open and email confirmation is **off**, see F3).
+throwaway account.
+
+> **Correction (2026-07-10, verified against the live project).** The original
+> threat model said "signup is open and email confirmation is **off**," reading
+> `enable_confirmations = false` out of `supabase/config.toml`. **That file
+> configures the local Supabase stack only; it does not govern the hosted
+> project.** On the hosted project email confirmation is **ON**:
+>
+> - A live signup returns `{"code":429,"error_code":"over_email_send_rate_limit"}` —
+>   Supabase attempted to send a confirmation mail, which it would not do if
+>   confirmations were off.
+> - The one account on the project has `auth.users.confirmed_at IS NULL`.
+>
+> This matters for severity. An unconfirmed user never receives a session, so it
+> never obtains a JWT and cannot authenticate to PostgREST at all. **Every
+> `to authenticated` write policy is therefore gated behind a working inbox
+> today.** F3 (junk flooding) is correspondingly harder than described below —
+> it costs an inbox per account, not zero.
+>
+> The inverse also holds: if confirmation is ever turned off (see
+> `EMAIL.md`, which recommends exactly that as an interim fix), this document's
+> original threat model becomes the accurate one and the write-side rate limits
+> in `RATE_LIMITING.md` stop being optional.
 
 Platform behaviours asserted below were verified against primary sources; citations are inline.
+
+## Verification
+
+Independent fact-check of the *platform / Postgres* claims in this document (checked 2026-07-10). Note: most of this audit concerns the repo's own SQL and config (owned by the SQL/schema agent); the rows below cover only the platform-behavior assertions.
+
+| Claim | Status | Source | Note |
+|---|---|---|---|
+| `CREATE VIEW security_invoker` defaults to **off**; with it off, the **view owner's** RLS policies apply to base tables (R1) | **CONFIRMED** | [PostgreSQL CREATE VIEW](https://www.postgresql.org/docs/current/sql-createview.html) | "…by default, the row-level security policies of the view owner are applied." So `security_invoker = on` on `bathroom_stats` is load-bearing — keep it |
+| `auth` schema is not exposed to PostgREST (only `public`, `graphql_public`) (R6) | **CONFIRMED — empirically, on the hosted project** | live API probe, 2026-07-10 | `GET /rest/v1/users` and `/rest/v1/audit_log_entries` both return **404** with the anon key. Note the original citation (`config.toml:13`) was *not* valid evidence for this: that file governs the local stack only. The conclusion holds; the reasoning did not. |
+| `max_rows = 1000` (F8) | **CORRECTED (attribution)** | Supabase project default; dashboard → Settings → API → "Max rows" | `supabase/config.toml:18` sets this for the **local** stack and says nothing about the hosted project. PostgREST's own default is unlimited. The hosted project relies on Supabase's project default of 1000. **Not independently verified on this project** — only 10 rows exist, so a `?limit=100000` probe cannot distinguish 1000 from unlimited. Confirm in the dashboard before relying on it. |
+| email `enable_confirmations = false` (F3) | **REFUTED for the hosted project** | live signup probe, 2026-07-10 | `config.toml:176` is local-only. Hosted has confirmation **ON** (see the correction box above). |
+| Column-level `REVOKE` is a no-op if the role holds table-level UPDATE; correct fix = revoke at table level then grant columns | **CONFIRMED** | [PostgreSQL GRANT/REVOKE](https://www.postgresql.org/docs/current/sql-revoke.html) | the exact quote lives in the GRANT/REVOKE reference (co-cited in `USERS_AND_ROLES.md`), not `ddl-priv.html` |
+| `pg_catalog` is always implicitly searched, so built-ins resolve under `search_path = ''` (R7) | **CONFIRMED (documented PG behavior)** | [PG schemas/search-path](https://www.postgresql.org/docs/current/ddl-schemas.html) | long-standing Postgres behavior; citation is accurate |
+| PostgREST treats `*` as an alias for `%` in `LIKE`/`ILIKE` (F6) | **CONFIRMED (adjacent)** | [PostgREST tables/views](https://postgrest.org/en/stable/references/api/tables_views.html) | consistent with the cited PostgREST docs; not re-fetched this pass |
+| `storage.foldername(name)` = `string_to_array(name,'/')` minus last element (R4) | **CONFIRMED (adjacent)** | [supabase/storage schema](https://github.com/supabase/storage/blob/master/migrations/tenant/0002-storage-schema.sql) | matches the cited migration file |
 
 ---
 

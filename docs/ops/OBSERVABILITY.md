@@ -9,6 +9,20 @@ Two hard dependencies on other agents are flagged inline:
 - **USER ROLES agent** owns `profiles.role` / `public.is_admin()`. The admin read policy and `/admin/errors` gate are written against that helper and marked `DEPENDS ON ROLES`.
 - **PLATFORM agent** owns `main.tsx`, `App.tsx`, `router.tsx`, and `vite.config.ts` wiring. The three-line install is marked `WIRING`.
 
+## Verification
+
+Independent fact-check of the platform claims in this document (checked 2026-07-10 against primary sources).
+
+| Claim | Status | Source | Correction / note |
+|---|---|---|---|
+| Free-plan log retention = **1 day** (Pro 7, Team 28) | **CONFIRMED** | [pricing](https://supabase.com/pricing) | Free is **1 day** for API/Postgres logs specifically; **Auth Audit logs are 1 hour** on Free. The "1 day" figure the doc relies on is correct |
+| `pg_stat_statements` **enabled by default** on every project | **CONFIRMED** | [database/inspect](https://supabase.com/docs/guides/database/inspect) | the cited [pg_stat_statements extension page](https://supabase.com/docs/guides/database/extensions/pg_stat_statements) does **not** itself state "enabled by default" — the Debugging & monitoring page does ("every Supabase project has the pg_stat_statements extension enabled by default") |
+| `pg_stat_statements` retains **~5,000** statements | **UNVERIFIABLE** | — | matches the Postgres default `pg_stat_statements.max = 5000`, but not confirmed as Supabase's value in primary docs |
+| `pg_cron` available on the **Free** plan | **CONFIRMED** | [discussion #37405](https://github.com/orgs/supabase/discussions/37405) | Supabase staff: "Cron is only limited by the resources it uses CPU/Memory/Disk wise on any tier." The doc's correction of the earlier "pg_cron is Pro-gated" claim is **right** |
+| `pg_net` for async outbound HTTP from Postgres | **CONFIRMED** | [pg_net](https://supabase.com/docs/guides/database/extensions/pg_net) | available extension |
+| Sentry self-hosted minimum ≈ **4 CPU / 16 GB RAM / 20 GB disk** | **CONFIRMED** | [Sentry self-hosted](https://develop.sentry.dev/self-hosted/) | exact: **4 CPU cores, 16 GB RAM + 16 GB swap, 20 GB free disk** (32 GB RAM recommended) |
+| Sentry self-hosted runs **~40+ containers** | **UNVERIFIABLE** | — | the self-hosted page does not state a container count; the order-of-magnitude ("a large multi-service stack") is not in doubt |
+
 ---
 
 ## 1. Today's reality
@@ -505,10 +519,10 @@ Why not auto-symbolication? Because that's precisely what a hosted error tracker
 Supabase already logs a lot; the catch is **retention** and **no push/alerting**.
 
 - **Logs Explorer** (dashboard → Logs) exposes, as separate sources you can SQL-query: **Postgres logs, API / PostgREST request logs, Auth (GoTrue) logs, Storage logs, Realtime logs, Edge Function logs.** (https://supabase.com/docs/guides/telemetry/logs) Query them with the advanced filtering / SQL interface — https://supabase.com/docs/guides/telemetry/advanced-log-filtering.
-- **Retention on the Free plan is 1 day.** Verified against the pricing page (https://supabase.com/pricing): **Free = 1 day**, Pro = 7 days, Team = 28 days of log retention. So anything not captured into your *own* table (`client_errors`) is gone in 24 hours. This is the single biggest reason to build §2.
+- **Retention on the Free plan is 1 day.** Verified against the pricing page (https://supabase.com/pricing): **Free = 1 day**, Pro = 7 days, Team = 28 days of log retention (confirmed 2026-07-10; the 1-day figure applies to API/Postgres logs — **Auth Audit logs are retained only 1 hour** on Free). So anything not captured into your *own* table (`client_errors`) is gone in 24 hours. This is the single biggest reason to build §2.
 - **What you CAN query:** individual request rows (status, path, latency, auth role), Postgres error/notice messages, auth events (sign-ins, failures) — for the last 24h.
 - **What you CANNOT do for free:** retain beyond 1 day; get a **client-side** stack (Supabase only sees the server side of a request — it never sees a React render crash or a `window.onerror`); receive any **push** notification (no email/webhook on error). **Log Drains** (streaming logs to an external sink) exist but are a **Pro** feature and would mean an external service anyway — out of scope.
-- **`pg_stat_statements` is enabled by default on every Supabase project** (https://supabase.com/docs/guides/database/extensions/pg_stat_statements), and the dashboard's **Database → Query Performance** view + Performance Advisor read from it to flag slow queries and suggest indexes. Caveat: it retains **the latest ~5,000 statements**. This is your free slow-query hunting tool — no setup. For this app, the query to watch is the leading-`%` `ILIKE` in `listBathrooms` (a seq scan; the RESEARCH doc's `pg_trgm` GIN index fixes it) and the two-round-trip `attachStats` pattern.
+- **`pg_stat_statements` is enabled by default on every Supabase project** (confirmed 2026-07-10 — but the "enabled by default" statement is on the Debugging & monitoring page https://supabase.com/docs/guides/database/inspect, **not** the extension page https://supabase.com/docs/guides/database/extensions/pg_stat_statements cited here, which only documents how to enable it), and the dashboard's **Database → Query Performance** view + Performance Advisor read from it to flag slow queries and suggest indexes. Caveat: it retains **the latest ~5,000 statements** **[unverified: matches the Postgres default `pg_stat_statements.max = 5000` but not confirmed as Supabase's value in primary docs]**. This is your free slow-query hunting tool — no setup. For this app, the query to watch is the leading-`%` `ILIKE` in `listBathrooms` (a seq scan; the RESEARCH doc's `pg_trgm` GIN index fixes it) and the two-round-trip `attachStats` pattern.
 
 ---
 
@@ -583,7 +597,7 @@ A scheduled workflow (`on: schedule`) runs a read-only query with a limited key 
 | Rejected | Why, specifically |
 |---|---|
 | **Sentry (SaaS)** | The obvious answer to error tracking, and **off the table**: it's a third-party on the hot path, and its free tier is metered (event caps, 30/90-day retention) — "free tier that can bill/limit later," which this project treats as not-free. |
-| **Sentry, self-hosted** | Technically OSS, but **not realistic here.** Self-hosting is via `getsentry/self-hosted` (Docker Compose) and Sentry's own docs state a **minimum of ~4 CPU cores, 16 GB RAM, and 20 GB disk** — it runs **~40+ containers** (Kafka, ClickHouse, Redis, Postgres, Relay, Snuba, workers…). That is a standing server cluster to babysit and pay for, dwarfing the app it watches. A `client_errors` table plus 150 lines of TypeScript covers this app's needs at ~0 incremental cost. *(Resource figures are Sentry's self-hosted guidance; treat exact numbers as approximate/version-dependent — but the order of magnitude is not in doubt.)* |
+| **Sentry, self-hosted** | Technically OSS, but **not realistic here.** Self-hosting is via `getsentry/self-hosted` (Docker Compose) and Sentry's own docs state a **minimum of ~4 CPU cores, 16 GB RAM, and 20 GB disk** (confirmed 2026-07-10: exactly 4 CPU cores, 16 GB RAM + 16 GB swap, 20 GB free disk; 32 GB RAM recommended) — it runs **~40+ containers** **[unverified: the self-hosted docs do not state a container count]** (Kafka, ClickHouse, Redis, Postgres, Relay, Snuba, workers…). That is a standing server cluster to babysit and pay for, dwarfing the app it watches. A `client_errors` table plus 150 lines of TypeScript covers this app's needs at ~0 incremental cost. *(Resource figures are Sentry's self-hosted guidance; treat exact numbers as approximate/version-dependent — but the order of magnitude is not in doubt.)* |
 | **Datadog / New Relic / Grafana Cloud** | Third-party SaaS, metered free tiers that bill on volume. Same rejection class as Sentry-SaaS. Self-hosting Grafana + Loki/Tempo/Prometheus is possible but is again a standing observability stack far larger than this app warrants. |
 | **LogRocket / FullStory (session replay)** | Third-party SaaS; also a serious privacy surface (records user sessions) for an app whose whole ethos is self-sufficiency and minimal data. Hard no. |
 | **PostHog Cloud** | Third-party SaaS, metered. (Self-hosted PostHog is OSS but, like Sentry, a multi-container ClickHouse/Kafka stack — same "bigger than the app" problem.) |
