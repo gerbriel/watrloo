@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import type { BathroomWithStats, ReviewWithAuthor } from '@/types/db';
 import { getBathroom } from '@/lib/api/bathrooms';
@@ -31,6 +32,7 @@ function SubScoreBar({ label, value }: { label: string; value: number | null }) 
 export function BathroomDetail() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   const [status, setStatus] = useState<Status>('loading');
   const [bathroom, setBathroom] = useState<BathroomWithStats | null>(null);
@@ -65,11 +67,22 @@ export function BathroomDetail() {
     void load();
   }, [load]);
 
+  /**
+   * Reload this page AND drop the cached bathroom lists. Writing a review moves
+   * the averages that Home and the map render from `bathroom_stats`; without the
+   * invalidation those views keep serving pre-review numbers until the query
+   * goes stale on its own.
+   */
+  const refresh = useCallback(async () => {
+    await load();
+    await queryClient.invalidateQueries({ queryKey: ['bathrooms'] });
+  }, [load, queryClient]);
+
   async function handleDelete(review: ReviewWithAuthor) {
     setDeletingId(review.id);
     try {
       await deleteReview(review.id);
-      await load();
+      await refresh();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not delete the review.');
     } finally {
@@ -160,7 +173,7 @@ export function BathroomDetail() {
         </h2>
 
         {user ? (
-          <ReviewForm bathroomId={bathroom.id} userId={user.id} onSaved={() => void load()} />
+          <ReviewForm bathroomId={bathroom.id} userId={user.id} onSaved={() => void refresh()} />
         ) : (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-app bg-raised p-4">
             <p className="text-sm text-app">Been here? Share your experience.</p>

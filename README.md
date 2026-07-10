@@ -34,6 +34,20 @@ Both env values are safe to ship in a browser bundle: the publishable key is
 constrained by row level security. **Never put the `service_role` key in a
 `VITE_`-prefixed variable** — Vite inlines those into the client bundle.
 
+## Before you launch
+
+**Wire up your own SMTP.** Supabase's built-in email sender is capped at a
+couple of messages per hour *for the whole project*, and it is explicitly not
+meant for production. Email confirmation is on, so signup sends a mail — once
+that cap is hit, new users get `over_email_send_rate_limit` and simply never
+receive their confirmation. This is verified behavior on this project, not a
+theoretical limit. Configure a custom SMTP provider in
+*Authentication → Emails* before you let anyone sign up.
+
+Note that `supabase/config.toml` sets `enable_confirmations = false`. That
+governs the **local** stack only; it has no effect on the hosted project, whose
+auth settings live in the dashboard.
+
 ## Database
 
 Schema lives in `supabase/migrations/`. To apply it to a fresh project:
