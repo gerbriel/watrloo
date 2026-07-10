@@ -1,5 +1,7 @@
 # Watrloo
 
+**Live: <https://gerbriel.github.io/watrloo/>**
+
 Find and rate public bathrooms. Like Yelp, but for the room you actually need
 right now.
 
@@ -119,6 +121,35 @@ around RLS.
 | `npm run build`     | typecheck + production build |
 | `npm run typecheck` | types only, no emit          |
 | `npm run lint`      | oxlint                       |
+
+## Deployment
+
+Pushing to `main` builds and publishes to GitHub Pages via
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
+
+Pages serves a project repo under `/<repo>/`, so CI sets `BASE_PATH=/watrloo/`.
+Vite uses it for asset URLs and the router reads it back out of
+`import.meta.env.BASE_URL` as its `basename` — change one and you must change the
+other. Locally both are `/`.
+
+Pages has no rewrite rules, so the workflow copies `index.html` to `404.html`.
+That is what makes a deep link like `/watrloo/bathrooms/:id` load the app instead
+of GitHub's 404 page. The HTTP status really is 404; the browser renders the body
+and the router resolves the route.
+
+Build-time configuration:
+
+| name | kind | required | notes |
+| --- | --- | --- | --- |
+| `VITE_SUPABASE_URL` | Actions **secret** | yes | |
+| `VITE_SUPABASE_ANON_KEY` | Actions **secret** | yes | Publishable; ends up in the bundle either way |
+| `VITE_BASEMAP_URL` | Actions **variable** | no | Unset → map degrades to pins on a flat background |
+| `VITE_BASEMAP_ASSETS_URL` | Actions **variable** | no | |
+
+> **Supabase Auth `Site URL` still points at localhost.** Password sign-in works,
+> but confirmation and password-reset links would send users to the wrong host.
+> Set it to the Pages URL in the dashboard before inviting anyone. See
+> [docs/ops/EMAIL.md](docs/ops/EMAIL.md).
 
 ## License
 
