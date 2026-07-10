@@ -20,8 +20,10 @@ export function SignIn() {
   const { signIn, session } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  // Default into the app (the directory), not the marketing landing at '/'.
   const from =
-    (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? '/';
+    (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ??
+    '/browse';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

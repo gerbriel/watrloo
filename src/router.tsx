@@ -1,6 +1,7 @@
 import { createBrowserRouter, Link } from 'react-router-dom';
 import { Layout } from '@/components/layout/Layout';
 import { RequireAuth } from '@/auth/RequireAuth';
+import { Landing } from '@/pages/Landing';
 import { Home } from '@/pages/Home';
 import { MapPage } from '@/pages/MapPage';
 import { NewBathroomPage } from '@/pages/NewBathroom';
@@ -31,7 +32,8 @@ export const router = createBrowserRouter([
   {
     element: <Layout />,
     children: [
-      { path: '/', element: <Home /> },
+      { path: '/', element: <Landing /> },
+      { path: '/browse', element: <Home /> },
       { path: '/map', element: <MapPage /> },
       {
         path: '/bathrooms/new',

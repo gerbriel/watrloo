@@ -39,14 +39,24 @@ export function SignUp() {
   const [sentTo, setSentTo] = useState<string | null>(null);
 
   // Signed in already (and not mid email-confirmation): nothing to do here.
-  if (session && !sentTo) return <Navigate to="/" replace />;
+  if (session && !sentTo) return <Navigate to="/browse" replace />;
 
   if (sentTo) {
     return (
       <div className="mx-auto max-w-sm py-12 text-center">
-        <div className="text-4xl" aria-hidden="true">
-          📬
-        </div>
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          className="mx-auto size-10 text-flush-500"
+        >
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <path d="m3 7 9 6 9-6" />
+        </svg>
         <h1 className="mt-3 text-2xl font-bold text-app">Check your email</h1>
         <p className="mt-2 text-sm text-muted">
           We sent a confirmation link to{' '}
@@ -84,7 +94,7 @@ export function SignUp() {
     try {
       const { needsEmailConfirmation } = await signUp(email.trim(), password, username);
       if (needsEmailConfirmation) setSentTo(email.trim());
-      else navigate('/', { replace: true });
+      else navigate('/browse', { replace: true });
     } catch (err) {
       setError(signUpErrorMessage(err));
     } finally {

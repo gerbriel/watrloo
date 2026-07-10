@@ -105,7 +105,7 @@ export function BathroomDetail() {
         <p className="max-w-md text-sm text-muted">
           This bathroom may have been removed, or the link is wrong.
         </p>
-        <Link to="/">
+        <Link to="/browse">
           <Button variant="secondary">Back to all bathrooms</Button>
         </Link>
       </div>

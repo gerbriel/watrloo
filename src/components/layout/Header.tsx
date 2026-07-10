@@ -57,7 +57,7 @@ export function Header() {
         </Link>
 
         <nav className="flex items-center gap-1 text-sm" aria-label="Primary">
-          <NavItem to="/" label="Home" end />
+          <NavItem to="/browse" label="Browse" />
           <NavItem to="/map" label="Map" />
         </nav>
 
