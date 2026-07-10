@@ -2,3 +2,8 @@ export * from './bathrooms';
 export * from './reviews';
 export * from './photos';
 export * from './profiles';
+export * from './reports';
+export * from './moderation';
+export * from './businesses';
+export * from './claims';
+export * from './accessRequests';

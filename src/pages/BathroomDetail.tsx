@@ -10,6 +10,9 @@ import { Button } from '@/components/ui/Button';
 import { AmenityBadges } from '@/components/bathroom/AmenityBadges';
 import { ReviewForm } from '@/components/review/ReviewForm';
 import { ReviewList } from '@/components/review/ReviewList';
+import { ReportButton } from '@/components/moderation/ReportButton';
+import { VerifiedBadge } from '@/components/business/VerifiedBadge';
+import { ClaimButton } from '@/components/business/ClaimButton';
 
 type Status = 'loading' | 'ready' | 'notfound' | 'error';
 
@@ -155,7 +158,14 @@ export function BathroomDetail() {
           <p className="whitespace-pre-line text-sm text-app">{bathroom.description}</p>
         )}
 
+        <VerifiedBadge bathroomId={bathroom.id} />
+
         <AmenityBadges amenities={bathroom} />
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <ReportButton target={{ bathroom_id: bathroom.id }} />
+          <ClaimButton bathroomId={bathroom.id} />
+        </div>
       </header>
 
       <section className="flex flex-col gap-3">

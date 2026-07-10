@@ -46,6 +46,9 @@ export interface Bathroom extends Amenities {
   description: string | null;
   created_by: Uuid | null;
   created_at: string;
+  /** Set when a moderator removes it. Hidden from the public by RLS. */
+  deleted_at: string | null;
+  deleted_by: Uuid | null;
 }
 
 /** Aggregates from the `bathroom_stats` view. Null when review_count is 0. */
@@ -74,6 +77,9 @@ export interface Review {
   body: string | null;
   created_at: string;
   updated_at: string;
+  /** Set when a moderator removes it. Hidden from the public by RLS. */
+  deleted_at: string | null;
+  deleted_by: Uuid | null;
 }
 
 export interface ReviewPhoto {
@@ -89,14 +95,61 @@ export interface ReviewWithAuthor extends Review {
   photos: ReviewPhoto[];
 }
 
+// --- Roles & moderation ----------------------------------------------------
+
+/** Absence of a row means the base "user" tier; see docs/ops/USERS_AND_ROLES.md. */
+export type AppRole = 'moderator' | 'admin';
+
+export interface UserRole {
+  user_id: Uuid;
+  role: AppRole;
+  granted_by: Uuid | null;
+  granted_at: string;
+}
+
+export type ReportStatus = 'open' | 'resolved' | 'dismissed';
+
+export interface Report {
+  id: Uuid;
+  reporter_id: Uuid | null;
+  review_id: Uuid | null;
+  bathroom_id: Uuid | null;
+  reason: string;
+  status: ReportStatus;
+  resolved_by: Uuid | null;
+  resolved_at: string | null;
+  created_at: string;
+}
+
+/** A report with its reporter and target resolved, as the admin queue renders it. */
+export interface ReportWithTarget extends Report {
+  reporter: Pick<Profile, 'username'> | null;
+  review:
+    | (Pick<Review, 'id' | 'body' | 'rating' | 'bathroom_id' | 'deleted_at'> & {
+        author: Pick<Profile, 'username'> | null;
+      })
+    | null;
+  bathroom: Pick<Bathroom, 'id' | 'name' | 'address' | 'deleted_at'> | null;
+}
+
 // --- Write payloads --------------------------------------------------------
 
-export type NewBathroom = Omit<Bathroom, 'id' | 'created_by' | 'created_at'>;
+export type NewBathroom = Omit<
+  Bathroom,
+  'id' | 'created_by' | 'created_at' | 'deleted_at' | 'deleted_by'
+>;
 
 export type NewReview = Pick<
   Review,
   'bathroom_id' | 'rating' | 'cleanliness' | 'privacy' | 'accessibility' | 'body'
 >;
+
+/** A user's flag on exactly one target. `reporter_id` is set by the API. */
+export interface NewReport {
+  review_id?: Uuid;
+  bathroom_id?: Uuid;
+  reason: string;
+}
 
 // --- Map -------------------------------------------------------------------
 
@@ -109,3 +162,116 @@ export interface Bounds {
 }
 
 export const STORAGE_BUCKET = 'review-photos';
+
+// --- Business accounts (paid tier) -----------------------------------------
+
+export type BusinessRole = 'owner' | 'manager' | 'staff';
+
+export interface Business {
+  id: Uuid;
+  name: string;
+  slug: string | null;
+  website: string | null;
+  logo_url: string | null;
+  owner_id: Uuid | null;
+  created_at: string;
+}
+
+export interface BusinessMember {
+  business_id: Uuid;
+  user_id: Uuid;
+  role: BusinessRole;
+  created_at: string;
+}
+
+export type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'canceled';
+
+export interface Subscription {
+  business_id: Uuid;
+  plan: string;
+  status: SubscriptionStatus;
+  current_period_end: string | null;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  updated_at: string;
+}
+
+export type ClaimStatus = 'pending' | 'verified' | 'rejected';
+
+export interface BathroomClaim {
+  id: Uuid;
+  bathroom_id: Uuid;
+  business_id: Uuid;
+  status: ClaimStatus;
+  requested_by: Uuid | null;
+  reviewed_by: Uuid | null;
+  created_at: string;
+  reviewed_at: string | null;
+}
+
+export type AccessRequestStatus = 'open' | 'approved' | 'rejected';
+
+export interface BusinessAccessRequest {
+  id: Uuid;
+  requester_id: Uuid | null;
+  business_name: string;
+  website: string | null;
+  contact_email: string | null;
+  message: string | null;
+  locations_note: string | null;
+  status: AccessRequestStatus;
+  reviewed_by: Uuid | null;
+  reviewed_at: string | null;
+  created_at: string;
+}
+
+export interface ReviewResponse {
+  id: Uuid;
+  review_id: Uuid;
+  business_id: Uuid;
+  author_id: Uuid | null;
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// --- Business write payloads / composites ----------------------------------
+
+export interface NewAccessRequest {
+  business_name: string;
+  website?: string | null;
+  contact_email?: string | null;
+  message?: string | null;
+  locations_note?: string | null;
+}
+
+/** The exact facts a business may edit on a claimed listing (never reviews). */
+export type ListingUpdate = Pick<
+  Bathroom,
+  | 'name'
+  | 'address'
+  | 'description'
+  | 'wheelchair_accessible'
+  | 'gender_neutral'
+  | 'changing_table'
+  | 'requires_key'
+>;
+
+/** A business the caller belongs to, with their role and its subscription. */
+export interface MyBusiness extends Business {
+  role: BusinessRole;
+  subscription: Subscription | null;
+}
+
+/** A claim joined to its bathroom + business, for the admin queue. */
+export interface ClaimWithContext extends BathroomClaim {
+  bathroom: Pick<Bathroom, 'id' | 'name' | 'address'> | null;
+  business: Pick<Business, 'id' | 'name'> | null;
+}
+
+/** A bathroom a business has claimed, with the claim status, for the dashboard. */
+export interface ClaimedListing {
+  claim_id: Uuid;
+  status: ClaimStatus;
+  bathroom: Bathroom;
+}

@@ -155,6 +155,10 @@ export function BathroomMap({
       center: center ?? (selected ? [selected.lng, selected.lat] : DEFAULT_CENTER),
       zoom: zoom ?? (selected ? 15 : DEFAULT_ZOOM),
       attributionControl: false,
+      // The picker sits inside a scrollable form, so a one-finger swipe should
+      // scroll the page (two fingers pan the map); on desktop this also stops
+      // the scroll wheel from hijack-zooming. The full-screen map page opts out.
+      cooperativeGestures: selectable,
     });
     mapRef.current = map;
 
@@ -163,11 +167,12 @@ export function BathroomMap({
 
     if (locate) {
       // Works on desktop and mobile via the browser Geolocation API: the control
-      // owns the permission prompt, the "you are here" dot + accuracy ring, and
-      // live tracking as the visitor moves.
+      // owns the permission prompt and drops a "you are here" dot + accuracy ring.
+      // One-shot, not continuous tracking, so the GPS doesn't stay on and drain
+      // the battery; the button re-locates on demand.
       const geolocate = new maplibregl.GeolocateControl({
         positionOptions: { enableHighAccuracy: true },
-        trackUserLocation: true,
+        trackUserLocation: false,
         showUserLocation: true,
       });
       map.addControl(geolocate, 'top-right');

@@ -9,7 +9,7 @@ import {
 import type { ReactNode } from 'react';
 import type { AuthSession as Session, AuthUser as User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
-import type { Profile } from '@/types/db';
+import type { AppRole, BusinessMember, Profile } from '@/types/db';
 
 /** Mirror of the DB check constraint on `profiles.username`. */
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,30}$/;
@@ -18,8 +18,19 @@ interface AuthContextValue {
   session: Session | null;
   user: User | null;
   profile: Profile | null;
+  /** Roles held by the signed-in user; empty for the base "user" tier. */
+  roles: AppRole[];
+  /** Convenience derivations: admin is a superset of moderator. */
+  isModerator: boolean;
+  isAdmin: boolean;
+  /** Businesses the user belongs to (empty for ordinary users). */
+  businessMemberships: BusinessMember[];
+  isBusinessMember: boolean;
   /** True until the very first session check resolves. */
   loading: boolean;
+  /** True while the signed-in user's roles are still being fetched. Role guards
+   *  must wait on this, or they'd bounce a moderator before roles arrive. */
+  rolesLoading: boolean;
   /**
    * Creates the account. When the project has email confirmation enabled
    * Supabase returns no session, so the caller must send the user to check
@@ -41,6 +52,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [roles, setRoles] = useState<AppRole[]>([]);
+  const [rolesLoading, setRolesLoading] = useState(false);
+  const [businessMemberships, setBusinessMemberships] = useState<BusinessMember[]>([]);
   const [loading, setLoading] = useState(true);
 
   const user = session?.user ?? null;
@@ -104,6 +118,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [userId]);
 
+  // Load the caller's roles alongside the profile. The "users read their own
+  // roles" policy scopes this to their own rows, so it's safe to read directly.
+  // This only gates what the UI *shows*; every privileged action is re-checked
+  // in the database, so a tampered client gains nothing.
+  useEffect(() => {
+    if (!userId) {
+      setRoles([]);
+      setRolesLoading(false);
+      return;
+    }
+    let active = true;
+    setRolesLoading(true);
+    supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId)
+      .then(({ data, error }) => {
+        if (!active) return;
+        setRoles(error ? [] : ((data ?? []) as { role: AppRole }[]).map((r) => r.role));
+        setRolesLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
+  // Which businesses the user belongs to — gates the "For business" surfaces.
+  // Read-only convenience; every business action is re-checked in the database.
+  useEffect(() => {
+    if (!userId) {
+      setBusinessMemberships([]);
+      return;
+    }
+    let active = true;
+    supabase
+      .from('business_members')
+      .select('*')
+      .eq('user_id', userId)
+      .then(({ data, error }) => {
+        if (!active) return;
+        setBusinessMemberships(error ? [] : ((data ?? []) as BusinessMember[]));
+      });
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
   const refreshProfile = useCallback(async () => {
     if (!userId) {
       setProfile(null);
@@ -129,7 +190,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { username } },
+        options: {
+          data: { username },
+          // Where the confirmation link sends them back to. BASE_URL carries the
+          // GitHub Pages '/watrloo/' prefix in prod and '/' in dev, so this
+          // resolves to the deployed origin either way. The URL must be on
+          // Supabase's redirect allowlist. detectSessionInUrl then reads the
+          // returned session, so clicking the link lands them logged in on the app.
+          emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}browse`,
+        },
       });
       if (error) throw error;
       return { needsEmailConfirmation: data.session === null };
@@ -147,18 +216,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   }, []);
 
+  const isAdmin = roles.includes('admin');
+  const isModerator = isAdmin || roles.includes('moderator');
+  const isBusinessMember = businessMemberships.length > 0;
+
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
       user,
       profile,
+      roles,
+      isModerator,
+      isAdmin,
+      businessMemberships,
+      isBusinessMember,
       loading,
+      rolesLoading,
       signUp,
       signIn,
       signOut,
       refreshProfile,
     }),
-    [session, user, profile, loading, signUp, signIn, signOut, refreshProfile],
+    [
+      session,
+      user,
+      profile,
+      roles,
+      isModerator,
+      isAdmin,
+      businessMemberships,
+      isBusinessMember,
+      loading,
+      rolesLoading,
+      signUp,
+      signIn,
+      signOut,
+      refreshProfile,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

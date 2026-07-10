@@ -2,6 +2,8 @@ import type { ReviewWithAuthor, Score } from '@/types/db';
 import { Stars } from '@/components/ui/Stars';
 import { publicPhotoUrl } from '@/lib/api/photos';
 import { Button } from '@/components/ui/Button';
+import { ReportButton } from '@/components/moderation/ReportButton';
+import { OwnerResponse } from '@/components/business/OwnerResponse';
 
 function timeAgo(iso: string): string {
   const then = new Date(iso).getTime();
@@ -103,7 +105,9 @@ export function ReviewCard({
         </ul>
       )}
 
-      {isOwn && onDelete && (
+      <OwnerResponse reviewId={review.id} />
+
+      {isOwn && onDelete ? (
         <div className="flex justify-end">
           <Button
             variant="ghost"
@@ -115,6 +119,8 @@ export function ReviewCard({
             Delete
           </Button>
         </div>
+      ) : (
+        !isOwn && <ReportButton target={{ review_id: review.id }} />
       )}
     </article>
   );

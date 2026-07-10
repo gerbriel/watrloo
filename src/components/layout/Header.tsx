@@ -38,7 +38,7 @@ function NavItem({ to, label, end }: { to: string; label: string; end?: boolean 
 }
 
 export function Header() {
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, signOut, isModerator, isBusinessMember } = useAuth();
   const navigate = useNavigate();
 
   return (
@@ -61,6 +61,12 @@ export function Header() {
         <nav className="flex items-center gap-1 text-sm" aria-label="Primary">
           <NavItem to="/browse" label="Browse" />
           <NavItem to="/map" label="Map" />
+          {isBusinessMember ? (
+            <NavItem to="/business/dashboard" label="My business" />
+          ) : (
+            <NavItem to="/business" label="For business" />
+          )}
+          {isModerator && <NavItem to="/admin" label="Admin" />}
         </nav>
 
         <div className="ml-auto flex items-center gap-2">

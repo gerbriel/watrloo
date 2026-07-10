@@ -16,7 +16,7 @@ const DEFAULT_LIMIT = 50;
  * every row and it isn't part of the `Bathroom` type.
  */
 const COLUMNS =
-  'id,name,address,lat,lng,description,wheelchair_accessible,gender_neutral,changing_table,requires_key,created_by,created_at';
+  'id,name,address,lat,lng,description,wheelchair_accessible,gender_neutral,changing_table,requires_key,created_by,created_at,deleted_at,deleted_by';
 
 /**
  * `bathroom_stats` is a VIEW with no foreign-key relationship PostgREST can see,
@@ -168,8 +168,27 @@ export async function createBathroom(
   const { data, error } = await supabase
     .from('bathrooms')
     .insert({ ...input, created_by: userId })
-    .select('*')
+    .select(COLUMNS)
     .single();
   if (error) throw error;
-  return data as Bathroom;
+  return data as unknown as Bathroom;
+}
+
+/**
+ * Edit a bathroom's facts. RLS decides who may: the creator (own row) or a
+ * moderator (any row). The caller doesn't pass identity — the policy reads it
+ * from the JWT — so this same call serves both the owner-edit and admin flows.
+ */
+export async function updateBathroom(
+  id: string,
+  patch: NewBathroom,
+): Promise<Bathroom> {
+  const { data, error } = await supabase
+    .from('bathrooms')
+    .update(patch)
+    .eq('id', id)
+    .select(COLUMNS)
+    .single();
+  if (error) throw error;
+  return data as unknown as Bathroom;
 }

@@ -31,4 +31,17 @@ export const queryKeys = {
   reviews: (bathroomId: string) => ['reviews', bathroomId] as const,
   myReview: (bathroomId: string, userId: string) =>
     ['review', bathroomId, userId] as const,
+  myRoles: (userId: string) => ['roles', userId] as const,
+  reports: (status: string) => ['reports', status] as const,
+  adminReviews: () => ['admin', 'reviews'] as const,
+  adminBathrooms: () => ['admin', 'bathrooms'] as const,
+  // Business tier
+  myBusinesses: (userId: string) => ['businesses', 'mine', userId] as const,
+  business: (id: string) => ['business', id] as const,
+  businessListings: (businessId: string) => ['business', businessId, 'listings'] as const,
+  businessMembers: (businessId: string) => ['business', businessId, 'members'] as const,
+  reviewResponse: (reviewId: string) => ['reviewResponse', reviewId] as const,
+  claimForBathroom: (bathroomId: string) => ['claim', bathroomId] as const,
+  adminAccessRequests: () => ['admin', 'accessRequests'] as const,
+  adminClaims: () => ['admin', 'claims'] as const,
 };

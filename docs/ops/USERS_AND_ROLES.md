@@ -1,8 +1,19 @@
 # Watrloo — Users & Roles
 
-Design for the role / permission system. Status: **proposal**. Nothing here is
-applied. All SQL is written to be pasted into a *new* migration by whoever owns
-the schema; this document does not touch `20260710000000_init.sql`.
+Design for the role / permission system. Status: **tier 1 implemented** in
+`supabase/migrations/20260710020000_roles_reports_moderation.sql` — the
+`user_roles` table, `is_moderator()`/`is_admin()`, soft-delete + moderator
+visibility, `reports`, `moderation_actions`, and the moderation/role RPCs, with
+an in-app `/admin` portal (report queue, review + bathroom moderation, role
+management). The implementation uses the **table-based** helper (§4.1) rather
+than the JWT custom-access-token hook (§3.2c); that hook remains the documented
+optimization to remove the per-statement table touch. Not yet built: account
+anonymization on deletion (§6) and anything needing `service_role` (listing/
+banning auth users), which requires an Edge Function. Sections below are the
+original design rationale and remain the reference.
+
+To deploy: `supabase db push` to the linked project, then bootstrap the first
+admin once from the SQL editor (see the tail of the migration).
 
 **Non-negotiable premise.** The repo is public and ships the Supabase anon key.
 Every line of client code and every policy name is readable by an attacker. So

@@ -60,8 +60,8 @@ export function SignUp() {
         <h1 className="mt-3 text-2xl font-bold text-app">Check your email</h1>
         <p className="mt-2 text-sm text-muted">
           We sent a confirmation link to{' '}
-          <span className="font-medium text-app">{sentTo}</span>. Click it to finish
-          creating your account, then sign in.
+          <span className="font-medium text-app">{sentTo}</span>. Click it to confirm
+          your account — you’ll be signed in automatically and taken to the app.
         </p>
         <Link
           to="/signin"

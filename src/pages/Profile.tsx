@@ -1,9 +1,11 @@
 import type { FormEvent, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Field';
 import { useAuth } from '@/auth/AuthProvider';
 import { supabase } from '@/lib/supabase';
+import { deleteMyAccount } from '@/lib/api/profiles';
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,30}$/;
 
@@ -17,12 +19,19 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export function ProfilePage() {
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile, signOut } = useAuth();
+  const navigate = useNavigate();
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Account deletion is two-step: reveal, then type the username to confirm.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (profile) setDraft(profile.username);
@@ -90,6 +99,22 @@ export function ProfilePage() {
     }
   }
 
+  async function handleDeleteAccount() {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteMyAccount(userId);
+      // The account (and this session) no longer exist; clear it and leave.
+      await signOut().catch(() => {});
+      navigate('/', { replace: true });
+    } catch (err) {
+      setDeleteError(
+        err instanceof Error ? err.message : 'Could not delete your account. Try again.',
+      );
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-lg py-8">
       <h1 className="text-2xl font-bold text-app">Your profile</h1>
@@ -150,6 +175,62 @@ export function ProfilePage() {
           <span className="text-app">{joined}</span>
         </Row>
       </dl>
+
+      <section className="mt-10 rounded-xl border border-red-500/40 bg-red-500/5 p-5">
+        <h2 className="text-base font-semibold text-app">Delete account</h2>
+        <p className="mt-1 text-sm text-muted">
+          Permanently deletes your account, your reviews, and your uploaded
+          photos. Bathrooms you added stay on the map but are no longer linked to
+          you. This can’t be undone.
+        </p>
+
+        {!confirmingDelete ? (
+          <Button
+            variant="danger"
+            size="sm"
+            className="mt-4"
+            onClick={() => {
+              setConfirmingDelete(true);
+              setDeleteError(null);
+            }}
+          >
+            Delete account
+          </Button>
+        ) : (
+          <div className="mt-4 flex flex-col gap-3">
+            <Input
+              label={`Type your username (${currentUsername}) to confirm`}
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              error={deleteError ?? undefined}
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <Button
+                variant="danger"
+                size="sm"
+                loading={deleting}
+                disabled={deleting || deleteConfirmText !== currentUsername}
+                onClick={() => void handleDeleteAccount()}
+              >
+                Permanently delete
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={deleting}
+                onClick={() => {
+                  setConfirmingDelete(false);
+                  setDeleteConfirmText('');
+                  setDeleteError(null);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

@@ -249,3 +249,12 @@
   font-size: 1rem;
   color: var(--color-porcelain-600);
 }
+
+/* Touch targets: MapLibre's control buttons default to 29px. On touch devices
+   bump the zoom/geolocate buttons to the ~44px minimum so they're easy to tap. */
+@media (pointer: coarse) {
+  .maplibregl-ctrl-group button {
+    width: 44px;
+    height: 44px;
+  }
+}
