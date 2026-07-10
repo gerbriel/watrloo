@@ -22,12 +22,13 @@ dist-ssr
 supabase/.temp
 supabase/.branches
 
-# Local tool state
-
 # Internal engineering guide. Deliberately not published.
 .ai/
 
-# Generated basemap extracts (gigabytes; built by scripts/build-basemap.sh)
+# Generated basemap artifacts: a multi-GB .pmtiles archive plus ~13MB of vendored
+# fonts/sprites. All reproducible via scripts/build-basemap.sh, so none of it
+# belongs in git.
+basemap/
 *.pmtiles
 
 # Editor directories and files

@@ -13,8 +13,14 @@ have to ask someone for a key.
 - **React 19** + **TypeScript** + **Vite**
 - **Tailwind CSS v4** (tokens in `src/index.css`, no config file)
 - **Supabase** — Postgres, auth, storage, row level security
-- **Leaflet** + OpenStreetMap for maps
+- **MapLibre GL** + a self-hosted [PMTiles](https://docs.protomaps.com/pmtiles/) basemap
+- **TanStack Query** for server state
 - **React Router v7**
+
+Watrloo calls no third-party APIs. The map is a static file you host rather
+than a tile service, search and duplicate detection run inside Postgres, and
+photos are compressed in the browser. Supabase is the only backend.
+See [docs/BASEMAP.md](docs/BASEMAP.md) for why, and how.
 
 ## Getting started
 
@@ -51,6 +57,26 @@ Optional sample data: `supabase/seed.sql`.
 
 Amenities live on `bathrooms` rather than on `reviews` because they are facts
 about the place, not opinions about it.
+
+Two RPCs do work the client shouldn't: `search_bathrooms` ranks a trigram-indexed
+fuzzy match over name and address, and `nearby_bathrooms` uses a PostGIS
+`ST_DWithin` lookup against a generated `geog` column to warn about duplicate
+entries before you add one.
+
+## Documentation
+
+| doc | what's in it |
+| --- | --- |
+| [BASEMAP.md](docs/BASEMAP.md) | Building and hosting the self-contained basemap |
+| [TECH_EVALUATION.md](docs/TECH_EVALUATION.md) | Dependency choices, with licenses and rejections |
+| [ops/SECURITY.md](docs/ops/SECURITY.md) | RLS audit: attacks, findings, hardening SQL |
+| [ops/RATE_LIMITING.md](docs/ops/RATE_LIMITING.md) | Abuse surfaces and in-Postgres throttling |
+| [ops/SCALING.md](docs/ops/SCALING.md) | Where this breaks first, with the arithmetic |
+| [ops/AVAILABILITY.md](docs/ops/AVAILABILITY.md) | Failure modes, backups, and the restore drill |
+| [ops/OBSERVABILITY.md](docs/ops/OBSERVABILITY.md) | Error capture without a third-party SaaS |
+| [ops/USERS_AND_ROLES.md](docs/ops/USERS_AND_ROLES.md) | Role model and the privilege-escalation trap |
+| [legal/PRIVACY_NOTES.md](docs/legal/PRIVACY_NOTES.md) | Data inventory and compliance analysis |
+| [legal/PRIVACY_POLICY.md](docs/legal/PRIVACY_POLICY.md) | Draft policy — **not legal advice** |
 
 ### Security
 

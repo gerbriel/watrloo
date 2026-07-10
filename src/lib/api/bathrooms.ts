@@ -11,6 +11,14 @@ import type {
 const DEFAULT_LIMIT = 50;
 
 /**
+ * Explicit column list. `bathrooms` also carries a generated `geog` column for
+ * spatial queries; `select('*')` would drag that WKB blob across the wire on
+ * every row and it isn't part of the `Bathroom` type.
+ */
+const COLUMNS =
+  'id,name,address,lat,lng,description,wheelchair_accessible,gender_neutral,changing_table,requires_key,created_by,created_at';
+
+/**
  * `bathroom_stats` is a VIEW with no foreign-key relationship PostgREST can see,
  * so it cannot be embedded (`select('*, bathroom_stats(*)')` returns PGRST200).
  * We therefore fetch the stats in a second query and merge them in JS, shaping
@@ -56,6 +64,19 @@ function normalizeStats(row: RawStats): BathroomStats {
   };
 }
 
+/**
+ * The RPCs are declared `returns setof public.bathrooms`, so they hand back the
+ * generated `geog` column too. Drop it: it isn't part of `Bathroom`, and callers
+ * have no use for WKB.
+ */
+function stripGeog(rows: unknown): Bathroom[] {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) => {
+    const { geog: _geog, ...rest } = row as Bathroom & { geog?: unknown };
+    return rest as Bathroom;
+  });
+}
+
 /** Fetch stats for the given bathrooms and attach each as a `stats` OBJECT. */
 async function attachStats(rows: Bathroom[]): Promise<BathroomWithStats[]> {
   if (rows.length === 0) return [];
@@ -74,63 +95,69 @@ async function attachStats(rows: Bathroom[]): Promise<BathroomWithStats[]> {
 }
 
 /**
- * PostgREST `.or()` takes a raw filter string, so a search term containing `,`
- * or `)` could break out of the expression. Wrapping the value in double quotes
- * makes reserved characters literal; we escape backslashes and quotes so the
- * term cannot terminate the quoted value early.
+ * Search goes through the `search_bathrooms` RPC rather than a PostgREST
+ * `.or()` filter string. The term is a bound parameter, so there is no filter
+ * expression for it to break out of, the trigram indexes get used, and results
+ * come back ranked by similarity instead of insertion order.
  */
-function ilikeValue(term: string): string {
-  const safe = term.replace(/[\\"]/g, '\\$&');
-  return `"%${safe}%"`;
-}
-
 export async function listBathrooms(
   opts: { search?: string; limit?: number; offset?: number } = {},
 ): Promise<BathroomWithStats[]> {
-  let query = supabase
-    .from('bathrooms')
-    .select('*')
-    .order('created_at', { ascending: false });
-
-  const term = opts.search?.trim();
-  if (term) {
-    const value = ilikeValue(term);
-    query = query.or(`name.ilike.${value},address.ilike.${value}`);
-  }
-
+  const term = opts.search?.trim() || null;
   const limit = opts.limit ?? DEFAULT_LIMIT;
   const offset = opts.offset ?? 0;
-  query = query.range(offset, offset + limit - 1);
 
-  const { data, error } = await query;
+  const { data, error } = await supabase.rpc('search_bathrooms', {
+    q: term,
+    lim: limit,
+    off: offset,
+  });
   if (error) throw error;
-  return attachStats((data ?? []) as Bathroom[]);
+  return attachStats(stripGeog(data));
 }
 
 export async function getBathroom(id: string): Promise<BathroomWithStats | null> {
   const { data, error } = await supabase
     .from('bathrooms')
-    .select('*')
+    .select(COLUMNS)
     .eq('id', id)
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
 
-  const [withStats] = await attachStats([data as Bathroom]);
+  const [withStats] = await attachStats([data as unknown as Bathroom]);
   return withStats;
 }
 
 export async function listBathroomsInBounds(b: Bounds): Promise<BathroomWithStats[]> {
   const { data, error } = await supabase
     .from('bathrooms')
-    .select('*')
+    .select(COLUMNS)
     .gte('lat', b.minLat)
     .lte('lat', b.maxLat)
     .gte('lng', b.minLng)
     .lte('lng', b.maxLng)
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return attachStats((data ?? []) as Bathroom[]);
+  return attachStats((data ?? []) as unknown as Bathroom[]);
+}
+
+/**
+ * Bathrooms within `meters` of a point, nearest first. Used to warn about a
+ * duplicate before someone adds a bathroom that already exists.
+ */
+export async function nearbyBathrooms(
+  lat: number,
+  lng: number,
+  meters = 40,
+): Promise<Bathroom[]> {
+  const { data, error } = await supabase.rpc('nearby_bathrooms', {
+    p_lat: lat,
+    p_lng: lng,
+    p_meters: meters,
+  });
+  if (error) throw error;
+  return stripGeog(data);
 }
 
 export async function createBathroom(

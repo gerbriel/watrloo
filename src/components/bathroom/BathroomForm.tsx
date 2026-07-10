@@ -1,9 +1,15 @@
-import { useState } from 'react';
-import type { Amenities, NewBathroom } from '@/types/db';
+import { lazy, Suspense, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import type { Amenities, Bathroom, NewBathroom } from '@/types/db';
 import { AMENITY_KEYS, AMENITY_LABELS } from '@/types/db';
+import { nearbyBathrooms } from '@/lib/api/bathrooms';
 import { Input, Textarea, Checkbox } from '@/components/ui/Field';
 import { Button } from '@/components/ui/Button';
-import { BathroomMap } from '@/components/map/BathroomMap';
+
+// MapLibre is only needed once this form is open — keep it out of the main chunk.
+const BathroomMap = lazy(() =>
+  import('@/components/map/BathroomMap').then((m) => ({ default: m.BathroomMap })),
+);
 
 interface FieldErrors {
   name?: string;
@@ -11,6 +17,9 @@ interface FieldErrors {
   lat?: string;
   lng?: string;
 }
+
+/** How close two entries must be before we suspect they're the same bathroom. */
+const DUPLICATE_RADIUS_M = 40;
 
 const EMPTY_AMENITIES: Amenities = {
   wheelchair_accessible: false,
@@ -48,12 +57,38 @@ export function BathroomForm({
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  const [duplicates, setDuplicates] = useState<Bathroom[]>([]);
+
   const lat = Number(latStr);
   const lng = Number(lngStr);
   const latValid = latStr.trim() !== '' && Number.isFinite(lat) && lat >= -90 && lat <= 90;
   const lngValid =
     lngStr.trim() !== '' && Number.isFinite(lng) && lng >= -180 && lng <= 180;
   const selected = latValid && lngValid ? { lat, lng } : null;
+
+  // Warn, don't block: two bathrooms really can sit 40m apart. Debounced so
+  // dragging the pin doesn't fire a query per frame.
+  useEffect(() => {
+    if (!selected) {
+      setDuplicates([]);
+      return;
+    }
+    let active = true;
+    const timer = setTimeout(() => {
+      nearbyBathrooms(selected.lat, selected.lng, DUPLICATE_RADIUS_M)
+        .then((rows) => {
+          if (active) setDuplicates(rows);
+        })
+        .catch(() => {
+          // A failed duplicate check must never stop someone adding a bathroom.
+          if (active) setDuplicates([]);
+        });
+    }, 400);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [selected?.lat, selected?.lng]);
 
   function toggle(key: keyof Amenities) {
     setAmenities((a) => ({ ...a, [key]: !a[key] }));
@@ -137,13 +172,54 @@ export function BathroomForm({
           Click the map to drop a pin, or type coordinates. Drag the pin to adjust.
         </p>
         <div className="h-72 overflow-hidden rounded-xl border border-app">
-          <BathroomMap
-            bathrooms={[]}
-            selectable
-            selected={selected}
-            onSelect={handlePick}
-          />
+          <Suspense
+            fallback={
+              <div className="grid h-full place-items-center bg-raised">
+                <span
+                  role="status"
+                  aria-label="Loading map"
+                  className="size-6 animate-spin rounded-full border-2 border-flush-500 border-t-transparent"
+                />
+              </div>
+            }
+          >
+            <BathroomMap
+              bathrooms={[]}
+              selectable
+              selected={selected}
+              onSelect={handlePick}
+            />
+          </Suspense>
         </div>
+
+        {duplicates.length > 0 && (
+          <div
+            role="status"
+            className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3"
+          >
+            <p className="text-sm font-medium text-app">
+              {duplicates.length === 1
+                ? 'A bathroom is already listed here'
+                : `${duplicates.length} bathrooms are already listed here`}
+            </p>
+            <p className="mt-0.5 text-xs text-muted">
+              Within {DUPLICATE_RADIUS_M}m of your pin. Add yours anyway if it’s a
+              different room.
+            </p>
+            <ul className="mt-2 flex flex-col gap-1">
+              {duplicates.map((d) => (
+                <li key={d.id}>
+                  <Link
+                    to={`/bathrooms/${d.id}`}
+                    className="text-xs font-medium text-flush-600 hover:underline"
+                  >
+                    {d.name} — {d.address}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input
             label="Latitude"

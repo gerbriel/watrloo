@@ -52,14 +52,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (!active) return;
-      setSession(data.session);
-      // Only now do we know whether the user is signed in — flipping `loading`
-      // here (not before) keeps RequireAuth from bouncing a logged-in user off
-      // a deep link during the first render tick.
-      setLoading(false);
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (!active) return;
+        setSession(data.session);
+      })
+      .catch(() => {
+        // Offline, or auth is down. Treat it as "signed out" rather than leaving
+        // `loading` true forever — otherwise every RequireAuth route spins
+        // indefinitely and the public pages never render either.
+        if (!active) return;
+        setSession(null);
+      })
+      .finally(() => {
+        // Only now do we know whether the user is signed in — flipping `loading`
+        // here (not before) keeps RequireAuth from bouncing a logged-in user off
+        // a deep link during the first render tick.
+        if (active) setLoading(false);
+      });
 
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);

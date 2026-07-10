@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
+import { ACCEPTED_TYPES, MAX_UPLOAD_BYTES, compressImage } from '@/lib/image';
 
-const MAX_BYTES = 5 * 1024 * 1024; // 5MB — matches the storage bucket limit.
-const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'];
+const ACCEPTED: readonly string[] = ACCEPTED_TYPES;
 const MAX_PHOTOS = 6;
 
-function reject(file: File): string | null {
+/**
+ * Format is checked before compression; size is checked *after*. A 9MB phone
+ * photo is fine — it gets downscaled under the bucket limit. Rejecting it up
+ * front would turn the most common case into an error.
+ */
+function unsupportedFormat(file: File): string | null {
   if (!ACCEPTED.includes(file.type)) {
     return `${file.name}: unsupported format (use JPEG, PNG, WebP, or AVIF).`;
-  }
-  if (file.size > MAX_BYTES) {
-    return `${file.name}: too large (max 5MB).`;
   }
   return null;
 }
@@ -31,6 +33,7 @@ export function PhotoUploader({
   const inputRef = useRef<HTMLInputElement>(null);
   const [previews, setPreviews] = useState<{ file: File; url: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
     const next = value.map((file) => ({ file, url: URL.createObjectURL(file) }));
@@ -40,26 +43,52 @@ export function PhotoUploader({
     };
   }, [value]);
 
-  function handleFiles(fileList: FileList | null) {
+  async function handleFiles(fileList: FileList | null) {
     if (!fileList) return;
     const incoming = Array.from(fileList);
-    const errors: string[] = [];
-    const accepted: File[] = [];
-    for (const file of incoming) {
-      const problem = reject(file);
-      if (problem) errors.push(problem);
-      else accepted.push(file);
-    }
+    if (inputRef.current) inputRef.current.value = '';
 
     const room = MAX_PHOTOS - value.length;
-    if (accepted.length > room) {
+    const errors: string[] = [];
+    const accepted: File[] = [];
+
+    setProcessing(true);
+    try {
+      for (const file of incoming) {
+        if (accepted.length >= room) break;
+
+        const problem = unsupportedFormat(file);
+        if (problem) {
+          errors.push(problem);
+          continue;
+        }
+
+        // Downscale and re-encode. This also strips EXIF, including the GPS
+        // coordinates phones embed — a bathroom photo should not carry the
+        // uploader's exact location.
+        let processed: File;
+        try {
+          processed = await compressImage(file);
+        } catch {
+          errors.push(`${file.name}: could not be processed.`);
+          continue;
+        }
+
+        if (processed.size > MAX_UPLOAD_BYTES) {
+          errors.push(`${file.name}: still too large after compression (max 5MB).`);
+          continue;
+        }
+        accepted.push(processed);
+      }
+    } finally {
+      setProcessing(false);
+    }
+
+    if (incoming.length > room) {
       errors.push(`You can attach up to ${MAX_PHOTOS} photos.`);
     }
     setError(errors.length > 0 ? errors.join(' ') : null);
-    if (accepted.length > 0) {
-      onChange([...value, ...accepted.slice(0, Math.max(0, room))]);
-    }
-    if (inputRef.current) inputRef.current.value = '';
+    if (accepted.length > 0) onChange([...value, ...accepted]);
   }
 
   function removeAt(index: number) {
@@ -108,22 +137,30 @@ export function PhotoUploader({
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            disabled={disabled}
+            disabled={disabled || processing}
             className="grid size-20 place-items-center rounded-lg border border-dashed border-app bg-surface text-muted hover:border-flush-500 hover:text-flush-600 disabled:opacity-60"
-            aria-label="Add photos"
+            aria-label={processing ? 'Processing photos' : 'Add photos'}
+            aria-busy={processing || undefined}
           >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-              className="size-6"
-            >
-              <path d="M12 5v14M5 12h14" />
-            </svg>
+            {processing ? (
+              <span
+                aria-hidden="true"
+                className="size-5 animate-spin rounded-full border-2 border-current border-t-transparent"
+              />
+            ) : (
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                className="size-6"
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            )}
           </button>
         )}
       </div>
@@ -143,8 +180,10 @@ export function PhotoUploader({
           {error}
         </p>
       ) : (
-        <p className="text-xs text-muted">
-          JPEG, PNG, WebP, or AVIF · up to 5MB each.
+        <p className="text-xs text-muted" aria-live="polite">
+          {processing
+            ? 'Processing photos…'
+            : 'JPEG, PNG, WebP, or AVIF. Large photos are resized automatically, and location data is stripped.'}
         </p>
       )}
     </div>

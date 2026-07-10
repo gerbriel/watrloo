@@ -96,21 +96,17 @@
   }
 }
 
-/* Leaflet wraps every divIcon in a white bordered box; our pins draw their own. */
-.leaflet-div-icon.watrloo-pin {
-  background: transparent;
-  border: none;
+/* MapLibre popups ship a white bubble; keep our type readable inside it and
+   drop the default padding so the popup body controls its own spacing.
+   The map paints dark via the Protomaps `dark` flavor, not a CSS filter, so
+   there is no tile-dimming hack here. */
+.maplibregl-popup-content {
+  border-radius: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.18);
 }
-
-/* Leaflet tiles render bright in dark mode; damp them. */
-@media (prefers-color-scheme: dark) {
-  .leaflet-tile-pane {
-    filter: brightness(0.75) saturate(0.85);
-  }
-}
-:root[data-theme='dark'] .leaflet-tile-pane {
-  filter: brightness(0.75) saturate(0.85);
-}
-:root[data-theme='light'] .leaflet-tile-pane {
-  filter: none;
+.maplibregl-popup-close-button {
+  padding: 0 0.25rem;
+  font-size: 1rem;
+  color: var(--color-porcelain-600);
 }
