@@ -44,4 +44,5 @@ export const queryKeys = {
   claimForBathroom: (bathroomId: string) => ['claim', bathroomId] as const,
   adminAccessRequests: () => ['admin', 'accessRequests'] as const,
   adminClaims: () => ['admin', 'claims'] as const,
+  openAccessRequestCount: () => ['admin', 'accessRequestCount'] as const,
 };

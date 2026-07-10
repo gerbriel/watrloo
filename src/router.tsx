@@ -75,14 +75,8 @@ export const router = createBrowserRouter([
 
       // --- Business (paid tier) ---------------------------------------------
       { path: '/business', element: <ForBusiness /> },
-      {
-        path: '/business/request',
-        element: (
-          <RequireAuth>
-            <RequestAccess />
-          </RequireAuth>
-        ),
-      },
+      // Public on purpose: a company can request access without a Watrloo account.
+      { path: '/business/request', element: <RequestAccess /> },
       {
         path: '/business/dashboard',
         element: (

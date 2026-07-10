@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import type { NewAccessRequest } from '@/types/db';
 import { fileAccessRequest } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import { Input, Textarea } from '@/components/ui/Field';
 import { Button } from '@/components/ui/Button';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function RequestAccess() {
   const { user } = useAuth();
@@ -17,26 +19,49 @@ export function RequestAccess() {
   const [message, setMessage] = useState('');
   const [locationsNote, setLocationsNote] = useState('');
   const [nameError, setNameError] = useState<string | undefined>(undefined);
+  const [emailError, setEmailError] = useState<string | undefined>(undefined);
 
   const mutation = useMutation({
     mutationFn: async (input: NewAccessRequest) => {
-      if (!user) throw new Error('You need to be signed in to request access.');
-      await fileAccessRequest(input, user.id);
+      await fileAccessRequest(input, user?.id ?? null);
     },
   });
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!businessName.trim()) {
+    const trimmedName = businessName.trim();
+    const trimmedEmail = contactEmail.trim();
+
+    let hasError = false;
+    if (!trimmedName) {
       setNameError('Business name is required.');
-      return;
+      hasError = true;
+    } else {
+      setNameError(undefined);
     }
-    setNameError(undefined);
+
+    // Signed-out visitors have no account we can tie the request to, so a
+    // reachable contact email is the only way we can follow up.
+    if (!user) {
+      if (!trimmedEmail) {
+        setEmailError('Contact email is required so we can reach you.');
+        hasError = true;
+      } else if (!EMAIL_RE.test(trimmedEmail)) {
+        setEmailError('Enter a valid email address.');
+        hasError = true;
+      } else {
+        setEmailError(undefined);
+      }
+    } else {
+      setEmailError(undefined);
+    }
+
+    if (hasError) return;
 
     const input: NewAccessRequest = {
-      business_name: businessName.trim(),
+      business_name: trimmedName,
       website: website.trim() ? website.trim() : null,
-      contact_email: contactEmail.trim() ? contactEmail.trim() : null,
+      contact_email: trimmedEmail ? trimmedEmail : null,
       message: message.trim() ? message.trim() : null,
       locations_note: locationsNote.trim() ? locationsNote.trim() : null,
     };
@@ -68,19 +93,10 @@ export function RequestAccess() {
         <h1 className="text-2xl font-semibold text-app">Request business access</h1>
         <p className="text-sm text-muted">
           Claim your locations, keep their info accurate, bulk-import a whole chain,
-          and respond to reviews from one place.
+          and respond to reviews from one place. No Watrloo account required &mdash;
+          just tell us how to reach you and we&rsquo;ll take it from there.
         </p>
       </div>
-
-      {!user && (
-        <p className="mb-6 text-sm text-muted">
-          You&rsquo;ll need to{' '}
-          <Link to="/signin" className="font-medium text-flush-600 hover:underline">
-            sign in
-          </Link>{' '}
-          before your request can be submitted.
-        </p>
-      )}
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         <Input
@@ -109,8 +125,14 @@ export function RequestAccess() {
           inputMode="email"
           value={contactEmail}
           onChange={(e) => setContactEmail(e.target.value)}
-          hint="Optional. How we&rsquo;ll reach you about this request."
+          error={emailError}
+          hint={
+            user
+              ? 'Optional. How we’ll reach you about this request.'
+              : 'So we can reach you about your request.'
+          }
           placeholder="you@business.com"
+          required={!user}
         />
 
         <Textarea
@@ -138,7 +160,7 @@ export function RequestAccess() {
         )}
 
         <div>
-          <Button type="submit" size="lg" loading={mutation.isPending} disabled={!user}>
+          <Button type="submit" size="lg" loading={mutation.isPending}>
             Request access
           </Button>
         </div>

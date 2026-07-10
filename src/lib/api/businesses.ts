@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { sanitizeLine, sanitizeOptional, sanitizeText } from '@/lib/sanitize';
 import type {
   Business,
   BusinessMember,
@@ -57,7 +58,12 @@ export async function updateBusinessProfile(
   id: string,
   patch: Partial<Pick<Business, 'name' | 'website' | 'logo_url' | 'slug'>>,
 ): Promise<void> {
-  const { error } = await supabase.from('businesses').update(patch).eq('id', id);
+  const clean: typeof patch = {};
+  if (patch.name !== undefined) clean.name = sanitizeLine(patch.name ?? '', 160);
+  if (patch.website !== undefined) clean.website = sanitizeOptional(patch.website, 300);
+  if (patch.logo_url !== undefined) clean.logo_url = sanitizeOptional(patch.logo_url, 500);
+  if (patch.slug !== undefined) clean.slug = sanitizeOptional(patch.slug, 80);
+  const { error } = await supabase.from('businesses').update(clean).eq('id', id);
   if (error) throw error;
 }
 
@@ -81,9 +87,9 @@ export async function listBusinessListings(businessId: string): Promise<ClaimedL
 export async function updateListing(bathroomId: string, patch: ListingUpdate): Promise<void> {
   const { error } = await supabase.rpc('business_update_listing', {
     p_bathroom_id: bathroomId,
-    p_name: patch.name,
-    p_address: patch.address,
-    p_description: patch.description,
+    p_name: sanitizeLine(patch.name, 120),
+    p_address: sanitizeLine(patch.address, 300),
+    p_description: sanitizeOptional(patch.description, 2000),
     p_wheelchair_accessible: patch.wheelchair_accessible,
     p_gender_neutral: patch.gender_neutral,
     p_changing_table: patch.changing_table,
@@ -113,7 +119,7 @@ export async function getReviewResponse(
 export async function respondToReview(reviewId: string, body: string): Promise<void> {
   const { error } = await supabase.rpc('business_respond_to_review', {
     p_review_id: reviewId,
-    p_body: body,
+    p_body: sanitizeText(body, 2000),
   });
   if (error) throw error;
 }

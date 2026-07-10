@@ -1,27 +1,30 @@
 import { supabase } from '@/lib/supabase';
 import type { BusinessAccessRequest, NewAccessRequest, AccessRequestStatus } from '@/types/db';
+import { sanitizeLine, sanitizeOptional } from '@/lib/sanitize';
 
 /**
- * File a "request business access" form and best-effort notify the admin by
- * email. The row is what matters (it shows in the admin queue); the email is a
- * convenience, so a failed invoke never blocks the request.
+ * File a "request business access" form. Works with or without an account:
+ * `userId` is null for anonymous submissions (the RLS "anyone can file" policy
+ * requires a null requester_id in that case). All free-text is sanitized here so
+ * nothing hostile is stored regardless of which form called us. Admins are
+ * notified in-app (the open-request badge + the /admin/requests queue), so there
+ * is no email dependency.
  */
 export async function fileAccessRequest(
   input: NewAccessRequest,
-  userId: string,
+  userId: string | null,
 ): Promise<void> {
+  const clean = {
+    business_name: sanitizeLine(input.business_name, 160),
+    website: sanitizeOptional(input.website, 300),
+    contact_email: sanitizeOptional(input.contact_email, 200),
+    message: sanitizeOptional(input.message, 2000),
+    locations_note: sanitizeOptional(input.locations_note, 4000),
+  };
   const { error } = await supabase
     .from('business_access_requests')
-    .insert({ ...input, requester_id: userId });
+    .insert({ ...clean, requester_id: userId });
   if (error) throw error;
-
-  try {
-    await supabase.functions.invoke('notify-access-request', {
-      body: { business_name: input.business_name, contact_email: input.contact_email },
-    });
-  } catch {
-    /* email is best-effort; the request is already recorded */
-  }
 }
 
 // --- Admin access-request queue --------------------------------------------
@@ -36,6 +39,16 @@ export async function listAccessRequests(
     .order('created_at', { ascending: false });
   if (error) throw error;
   return (data ?? []) as unknown as BusinessAccessRequest[];
+}
+
+/** Count of open requests — powers the in-app admin notification badge. */
+export async function countOpenAccessRequests(): Promise<number> {
+  const { count, error } = await supabase
+    .from('business_access_requests')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'open');
+  if (error) throw error;
+  return count ?? 0;
 }
 
 /** Admin: approve a request. Creates the business + owner + subscription. */

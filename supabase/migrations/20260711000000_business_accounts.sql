@@ -216,6 +216,13 @@ create policy "verified claims are public"
 create policy "users file their own access request"
   on public.business_access_requests for insert to authenticated
   with check ((select auth.uid()) = requester_id);
+-- A company shouldn't need a Watrloo consumer account to ask for access. Anon
+-- may insert only rows with a null requester_id (so it can't impersonate a
+-- member); length is capped by the CHECK constraints and the client sanitizes.
+grant insert on public.business_access_requests to anon;
+create policy "anyone can file an access request"
+  on public.business_access_requests for insert to anon
+  with check (requester_id is null);
 create policy "read own access request or all as admin"
   on public.business_access_requests for select to authenticated
   using ((select auth.uid()) = requester_id or (select public.is_moderator()));

@@ -1,6 +1,7 @@
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { ThemeToggle } from '@/components/layout/ThemeToggle';
+import { AdminRequestsBell } from '@/components/admin/AdminRequestsBell';
 import { useAuth } from '@/auth/AuthProvider';
 import { cn } from '@/lib/cn';
 
@@ -38,7 +39,7 @@ function NavItem({ to, label, end }: { to: string; label: string; end?: boolean 
 }
 
 export function Header() {
-  const { user, profile, signOut, isModerator, isBusinessMember } = useAuth();
+  const { user, profile, signOut, isModerator, isAdmin, isBusinessMember } = useAuth();
   const navigate = useNavigate();
 
   return (
@@ -70,6 +71,7 @@ export function Header() {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
+          {isAdmin && <AdminRequestsBell />}
           <Button
             size="sm"
             variant="secondary"

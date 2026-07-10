@@ -1,7 +1,17 @@
-import type { CSSProperties } from 'react';
+import type { ComponentType, CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/auth/AuthProvider';
+import { InteractionOptions } from '@/components/business/InteractionOptions';
+import { DashboardPreview } from '@/components/business/previews/DashboardPreview';
+import { ClaimPreview } from '@/components/business/previews/ClaimPreview';
+import { ListingEditPreview } from '@/components/business/previews/ListingEditPreview';
+import { ReviewResponsePreview } from '@/components/business/previews/ReviewResponsePreview';
+import { CsvImportPreview } from '@/components/business/previews/CsvImportPreview';
+import { TeamPreview } from '@/components/business/previews/TeamPreview';
+import { AnalyticsPreview } from '@/components/business/previews/AnalyticsPreview';
+import { StorefrontPreview } from '@/components/business/previews/StorefrontPreview';
+import { PromotionsPreview } from '@/components/business/previews/PromotionsPreview';
 
 /** Small inline icons — no icon dependency, no emoji. Mirrors Landing.tsx. */
 function Icon({ path, className }: { path: string; className?: string }) {
@@ -88,6 +98,49 @@ const STEPS = [
     body: 'Claim your locations, tidy the details, respond to reviews, and start promoting.',
   },
 ] as const;
+
+/**
+ * The public product tour: hard-coded preview windows grouped into steps.
+ * Each preview is a self-contained, prop-less "app window" mock. They read
+ * top-to-bottom as: overview → claim → edit → respond → import → team →
+ * analytics → storefront → promotions.
+ */
+const TOUR: readonly {
+  caption: string;
+  detail: string;
+  previews: readonly ComponentType[];
+}[] = [
+  {
+    caption: 'Start on your dashboard',
+    detail:
+      'Every location you manage, its rating, and what needs attention — all on one screen.',
+    previews: [DashboardPreview],
+  },
+  {
+    caption: 'Claim a location, then perfect the details',
+    detail:
+      'Prove ownership to light up the Official badge, then take control of the hours, amenities, and access notes.',
+    previews: [ClaimPreview, ListingEditPreview],
+  },
+  {
+    caption: 'Respond in public, or bring a whole chain online',
+    detail:
+      'Reply to reviews where visitors can see them — or upload a single CSV to import a fleet of locations at once.',
+    previews: [ReviewResponsePreview, CsvImportPreview],
+  },
+  {
+    caption: 'Add your team and watch the numbers',
+    detail:
+      'Invite teammates with scoped access, then track views, ratings, and trends across every listing.',
+    previews: [TeamPreview, AnalyticsPreview],
+  },
+  {
+    caption: 'Turn a listing into a storefront that sells',
+    detail:
+      'Show off a verified storefront and publish promotions that turn nearby searches into foot traffic.',
+    previews: [StorefrontPreview, PromotionsPreview],
+  },
+];
 
 /** A verified "storefront" preview that echoes Landing's SampleCard styling. */
 function StorefrontCard() {
@@ -254,6 +307,61 @@ export function ForBusiness() {
               <p className="text-sm leading-relaxed text-muted">{f.body}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Product tour + capabilities */}
+      <section className="flex flex-col gap-16">
+        <div className="max-w-2xl">
+          <h2 className="font-display text-3xl font-bold tracking-tight text-app">
+            What it looks like once you’re in
+          </h2>
+          <p className="mt-3 text-lg text-muted">
+            A quick tour of the business dashboard — from claiming a location to
+            running promotions. No account needed to look around.
+          </p>
+        </div>
+
+        {/* A. Hard-coded preview tour */}
+        <div className="flex flex-col gap-14">
+          {TOUR.map((group, i) => (
+            <div key={group.caption} className="flex flex-col gap-5">
+              <div className="flex items-baseline gap-3">
+                <span className="font-display text-sm font-bold text-flush-500">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <div>
+                  <h3 className="font-display text-lg font-semibold text-app">
+                    {group.caption}
+                  </h3>
+                  <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted">
+                    {group.detail}
+                  </p>
+                </div>
+              </div>
+              <div
+                className={
+                  group.previews.length > 1
+                    ? 'grid gap-5 lg:grid-cols-2'
+                    : 'grid gap-5'
+                }
+              >
+                {group.previews.map((Preview) => (
+                  <Preview key={Preview.name} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* B. What you can do once approved (self-contained, brings its own heading) */}
+        <InteractionOptions />
+
+        {/* Section CTA */}
+        <div className="flex flex-wrap gap-3">
+          <Button size="lg" variant="primary" onClick={() => navigate(primary.to)}>
+            {primary.label}
+          </Button>
         </div>
       </section>
 
