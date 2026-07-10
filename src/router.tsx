@@ -55,4 +55,10 @@ export const router = createBrowserRouter([
       { path: '*', element: <NotFound /> },
     ],
   },
-]);
+], {
+  // Vite's `base` (e.g. '/watrloo/' on GitHub Pages) must be stripped from the
+  // path before routes match, or every URL falls through to NotFound. Trailing
+  // slash removed because React Router wants '/watrloo', not '/watrloo/'.
+  // '/' stays '' — the root case, which basename treats as no prefix.
+  basename: import.meta.env.BASE_URL.replace(/\/$/, ''),
+});

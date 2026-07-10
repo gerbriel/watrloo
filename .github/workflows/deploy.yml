@@ -1,0 +1,67 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two deploys at once, but don't cancel one mid-flight either — a
+# half-published site is worse than a slightly stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # Fail the deploy on type errors rather than shipping a broken bundle.
+      - run: npm run typecheck
+
+      - run: npm run build
+        env:
+          # Pages serves this project repo at /watrloo/, not the root.
+          BASE_PATH: /watrloo/
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # Optional. Unset -> the map degrades to pins on a flat background
+          # rather than failing. Set these once the basemap is on R2.
+          VITE_BASEMAP_URL: ${{ vars.VITE_BASEMAP_URL }}
+          VITE_BASEMAP_ASSETS_URL: ${{ vars.VITE_BASEMAP_ASSETS_URL }}
+
+      - name: SPA fallback + disable Jekyll
+        # Pages has no rewrite rules, so a deep link like /watrloo/bathrooms/:id
+        # would 404 on the server. Serving index.html as the 404 page lets the
+        # router take over. (The response status really is 404; browsers render
+        # the body anyway, and crawlers are told the truth.)
+        run: |
+          cp dist/index.html dist/404.html
+          touch dist/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
