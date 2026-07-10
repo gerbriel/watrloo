@@ -1,0 +1,42 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Secrets. .env.local is also matched by *.local above; listed explicitly so
+# nobody removes that glob and silently starts committing keys.
+.env
+.env.local
+.env.*.local
+
+# Supabase CLI state (contains project ref and pooler connection details)
+supabase/.temp
+supabase/.branches
+
+# Local tool state
+
+# Internal engineering guide. Deliberately not published.
+.ai/
+
+# Generated basemap extracts (gigabytes; built by scripts/build-basemap.sh)
+*.pmtiles
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

@@ -1,0 +1,116 @@
+@import 'tailwindcss';
+
+/* Watrloo design tokens. Porcelain + a cool "flush" blue.
+   Every color is declared for both schemes; the `data-theme` attribute wins
+   over the media query so an explicit toggle always beats the OS preference. */
+@theme {
+  --color-porcelain-50: #f6f9fb;
+  --color-porcelain-100: #eaf1f6;
+  --color-porcelain-200: #d4e1eb;
+  --color-porcelain-300: #b0c6d8;
+  --color-porcelain-400: #7c9db8;
+  --color-porcelain-500: #547b9b;
+  --color-porcelain-600: #3f6180;
+  --color-porcelain-700: #344e68;
+  --color-porcelain-800: #2e4257;
+  --color-porcelain-900: #29394a;
+  --color-porcelain-950: #1a2531;
+
+  --color-flush-400: #38bdf8;
+  --color-flush-500: #0ea5e9;
+  --color-flush-600: #0284c7;
+
+  --color-star: #f5a524;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+@layer base {
+  :root {
+    --surface: #ffffff;
+    --surface-raised: var(--color-porcelain-50);
+    --border: var(--color-porcelain-200);
+    --text: var(--color-porcelain-950);
+    --text-muted: var(--color-porcelain-600);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface: var(--color-porcelain-950);
+      --surface-raised: var(--color-porcelain-900);
+      --border: var(--color-porcelain-800);
+      --text: var(--color-porcelain-50);
+      --text-muted: var(--color-porcelain-300);
+    }
+  }
+
+  :root[data-theme='light'] {
+    --surface: #ffffff;
+    --surface-raised: var(--color-porcelain-50);
+    --border: var(--color-porcelain-200);
+    --text: var(--color-porcelain-950);
+    --text-muted: var(--color-porcelain-600);
+  }
+
+  :root[data-theme='dark'] {
+    --surface: var(--color-porcelain-950);
+    --surface-raised: var(--color-porcelain-900);
+    --border: var(--color-porcelain-800);
+    --text: var(--color-porcelain-50);
+    --text-muted: var(--color-porcelain-300);
+  }
+
+  html {
+    color-scheme: light dark;
+  }
+
+  body {
+    background-color: var(--surface);
+    color: var(--text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Visible focus for keyboard users on every interactive element. */
+  :focus-visible {
+    outline: 2px solid var(--color-flush-500);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .bg-surface {
+    background-color: var(--surface);
+  }
+  .bg-raised {
+    background-color: var(--surface-raised);
+  }
+  .border-app {
+    border-color: var(--border);
+  }
+  .text-app {
+    color: var(--text);
+  }
+  .text-muted {
+    color: var(--text-muted);
+  }
+}
+
+/* Leaflet wraps every divIcon in a white bordered box; our pins draw their own. */
+.leaflet-div-icon.watrloo-pin {
+  background: transparent;
+  border: none;
+}
+
+/* Leaflet tiles render bright in dark mode; damp them. */
+@media (prefers-color-scheme: dark) {
+  .leaflet-tile-pane {
+    filter: brightness(0.75) saturate(0.85);
+  }
+}
+:root[data-theme='dark'] .leaflet-tile-pane {
+  filter: brightness(0.75) saturate(0.85);
+}
+:root[data-theme='light'] .leaflet-tile-pane {
+  filter: none;
+}
