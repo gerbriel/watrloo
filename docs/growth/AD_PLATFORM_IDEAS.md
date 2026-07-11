@@ -93,6 +93,21 @@ checklist + the honest "promote your listing" card (15 #1–3).
 "why am I seeing this ad" (10 #1); invalid-traffic filtering before any
 billed metric (09 #4–6).
 
+## Prior art — open-source repos worth mining
+
+Read for schemas, algorithms, and policy language. Mind licenses: concepts
+are free, but don't paste GPL/AGPL code into this repo.
+
+| Repo | What it is | What to steal (maps to our domains) |
+|---|---|---|
+| [readthedocs/ethical-ad-server](https://github.com/readthedocs/ethical-ad-server) | Django ad server behind EthicalAds; **contextual + geo, no user tracking** — the closest living match to our model | Advertiser → flight → advertisement schema; geo/keyword targeting JSON; viewport-visible impression rules; click/view fraud heuristics; reporting granularity (01, 03, 04, 09) |
+| [revive-adserver/revive-adserver](https://github.com/revive-adserver/revive-adserver/) | 20+ years of ad-ops in PHP (ex-OpenX); GPL | Vocabulary + delivery rules: zones (=placements), campaign priority/weighting, per-day/session caps, rotation. Concepts only — the code is legacy (06, 13) |
+| [gitcoinco/code_fund_ads](https://github.com/gitcoinco/code_fund_ads) | CodeFund — ethical dev-ads platform (Rails + Postgres, archived but readable) | Postgres-native campaign/creative/property schema, daily summary rollup tables, budget accounting — same DB engine as us (05, 13, 14) |
+| [growthbook/growthbook](https://github.com/growthbook/growthbook) | MIT-core experimentation platform | The Bayesian engine our A/B domain calls for: Beta-Binomial posteriors, bandits, SRM checks — port the math, skip the platform (07) |
+| [Plausible Analytics](https://plausible.io/data-policy) (AGPL) | Cookieless analytics | The daily-rotating-salt hash `hash(salt+domain+ip+ua)` for unique reach & frequency capping **without profiles** — glean the documented technique, don't copy AGPL code (03 §7, 13 §4) |
+| [umami-software/umami](https://github.com/umami-software/umami) / [PostHog](https://github.com/PostHog/posthog) | OSS analytics, Postgres-friendly | Event-table schema, client batching/sendBeacon, aggregate rollups at small-instance scale (03, 13) |
+| [fingerprintjs/BotD](https://github.com/fingerprintjs/BotD) | In-browser bot detection | Client-side invalid-traffic signal before an event is logged (09 §10) |
+
 ## Constraints every idea respects
 
 Static SPA + Supabase (RLS enforced; anon key public; Edge Functions are the
