@@ -23,7 +23,9 @@ create policy "settings are readable" on public.growth_settings
 
 insert into public.growth_settings (key, value) values
   ('k_anonymity_floor',          '30'),
-  ('promotions_enabled',         'true'),
+  -- Launch OFF (owner decision): the dispatcher stays inert until the consent
+  -- UI ships. Flip via: update growth_settings set value='true' where key='promotions_enabled';
+  ('promotions_enabled',         'false'),
   ('promo_global_cap_per_week',  '3'),
   ('promo_advertiser_cap_per_week', '1'),
   ('featured_capacity',          '{"browse": 3, "map": 1, "detail": 1}')
