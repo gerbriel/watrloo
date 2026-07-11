@@ -171,3 +171,49 @@ export async function reviewCampaign(
   });
   if (error) throw error;
 }
+
+// --- Admin kill controls (live ads) --------------------------------------------
+
+/** A live/approved/paused campaign plus its advertiser's standing. */
+export interface ManageableCampaign extends AdCampaign {
+  business: { name: string; suspended_at: string | null } | null;
+}
+
+/** Campaigns an admin can act on right now — anything past review. */
+export async function listManageableCampaigns(): Promise<ManageableCampaign[]> {
+  const { data, error } = await supabase
+    .from('ad_campaigns')
+    .select('*, business:businesses(name, suspended_at)')
+    .in('status', ['approved', 'running', 'paused'])
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as ManageableCampaign[];
+}
+
+/** Pause, resume, or permanently stop one campaign. Takes effect immediately. */
+export async function setCampaignStatus(
+  campaignId: string,
+  status: 'paused' | 'running' | 'done',
+  reason?: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('admin_set_campaign_status', {
+    p_campaign_id: campaignId,
+    p_status: status,
+    p_reason: reason ?? null,
+  });
+  if (error) throw error;
+}
+
+/** Suspend (or reinstate) an advertiser. Suspending pauses all its live ads. */
+export async function suspendBusiness(
+  businessId: string,
+  suspend: boolean,
+  reason?: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('admin_suspend_business', {
+    p_business_id: businessId,
+    p_suspend: suspend,
+    p_reason: reason ?? null,
+  });
+  if (error) throw error;
+}

@@ -52,4 +52,5 @@ export const queryKeys = {
   featured: (surface: string) => ['featured', surface] as const,
   campaigns: (businessId: string) => ['campaigns', businessId] as const,
   pendingCampaigns: () => ['admin', 'campaigns'] as const,
+  manageableCampaigns: () => ['admin', 'campaigns', 'live'] as const,
 };
