@@ -31,12 +31,12 @@ type Row = {
 };
 
 const ROWS: Row[] = [
-  { name: 'Bean & Bar — Clovis', address: '123 Pollasky Ave', plan: 'create' },
-  { name: 'Bean & Bar — River Park', address: '71 E Nees Ave', plan: 'claim' },
-  { name: 'Bean & Bar — Tower District', address: '815 E Olive Ave', plan: 'create' },
-  { name: 'Bean & Bar — Old Town Clovis', address: '456 Clovis Ave', plan: 'create' },
-  { name: 'Bean & Bar — Fig Garden', address: '5088 N Palm Ave', plan: 'claim' },
-  { name: 'Bean & Bar — Downtown Fresno', address: '2100 Kern St', plan: 'create' },
+  { name: 'Golden Bear — Bakersfield', address: '2400 Golden State Hwy', plan: 'claim' },
+  { name: 'Golden Bear — Sacramento', address: '500 Richards Blvd', plan: 'create' },
+  { name: 'Golden Bear — Barstow', address: '2751 Lenwood Rd', plan: 'create' },
+  { name: 'Golden Bear — Redding', address: '1150 Hilltop Dr', plan: 'create' },
+  { name: 'Golden Bear — San Diego', address: '3990 Rosecrans St', plan: 'claim' },
+  { name: 'Golden Bear — Stockton', address: '2345 W March Ln', plan: 'create' },
 ];
 
 export function CsvImportPreview() {

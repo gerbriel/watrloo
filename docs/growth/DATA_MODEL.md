@@ -1,0 +1,1794 @@
+# DATA_MODEL — Watrloo growth platform schema (A2, authoritative)
+
+**Summary.** This is the single source of truth for every new table the growth
+pivot adds: consent, coarse location, CRM segments, ad campaigns + per-recipient
+send logs, featured placements, newsletter, email suppressions, first-party
+analytics, and pricing plans/entitlements. It extends the live schema in place
+(RLS on every table, `SECURITY DEFINER` RPCs, `set search_path=''`, initplan
+policy form, PostGIS `geog` in the `extensions` schema, `moderation_actions`
+audit). Every other agent references the table/column names defined here.
+
+**Dependencies.** Consumes: existing migrations `20260710000000_init` …
+`20260711000000_business_accounts` (this doc extends them). Feeds: A1
+COMPLIANCE (consent/suppression are enforced in the send-path RPCs defined
+here), A3 LOCATION (owns IP→geo resolution + segment predicate DSL; calls
+`capture_location`/`admin_materialize_segment`), A4 ANALYTICS (`analytics_events`
++ `log_event`), A5 CAMPAIGNS (campaign lifecycle RPCs), A6 EMAIL_DELIVERY
+(`campaign_eligible_recipients` + `record_campaign_send` + `unsubscribe_by_token`),
+A7 INAPP_ADS (`featured_placements` + `active_featured_placements`), A8 NEWSLETTER
+(`newsletter_*`), A9 PRICING (owns the `plans` rows — mine are FK-satisfying
+placeholders), A10 ADVERTISER_CONSOLE (member-scoped campaign RLS + aggregate
+reach RPCs), A11 ADMIN_CRM (admin-only reads of everything), A12 ABUSE_AND_LIMITS
+(frequency cap + entitlement helpers), A14 ARCHITECTURE (integration seams).
+
+> **This is a DESIGN.** No migration is applied. The SQL below is written to drop
+> into a new file `supabase/migrations/20260712000000_growth_platform.sql`. The
+> orchestrator applies it later. Nothing here changes the live DB.
+
+---
+
+## 1. Design decisions (read before the SQL)
+
+1. **Naming is canonical.** Table/column names match the contract's canonical
+   model exactly (`user_consents.marketing_opt_in`, `location_opt_in`,
+   `gpc_detected`, `consent_updated_at`, `source`; `ad_campaigns.type/status/
+   target_region/target_geog/radius_km/segment_id/frequency_per_week/creative`;
+   etc.). Where I add a column the contract didn't list, it is flagged in §8.
+
+2. **RLS strategy — three tiers.**
+   - **Own-row** (`user_consents`): a user reads their own consent; writes funnel
+     through `set_consent` so the timestamps and the consent↔suppression coupling
+     are always consistent.
+   - **Admin-only CRM** (`user_locations`, `user_segments`, `segment_members`,
+     `campaign_sends`, `newsletter_sends`, `email_suppressions`,
+     `analytics_events`, `growth_settings`): `using ((select public.is_admin()))`.
+     Advertisers **never** get row access to any of these — they see only
+     aggregate counts via `SECURITY DEFINER` RPCs that return numbers, never
+     user_ids or locations.
+   - **Business-scoped** (`ad_campaigns`, `featured_placements`): a member sees
+     ONLY their own business's rows via `is_business_member(business_id)`; active
+     `featured_placements` are additionally public so the app can render ads
+     (same pattern as verified `bathroom_claims`).
+
+3. **Mutations go through `SECURITY DEFINER` RPCs**, matching the existing
+   codebase. Client tables get `select` (and, for a few, narrow `insert`)
+   grants; lifecycle writes (approve/submit/send/suppress/grant) have **no**
+   client write policy — the RPC is the only path and it re-checks role/consent
+   and writes an audit row to `moderation_actions`.
+
+4. **Frequency cap has two independent gates**, both enforced server-side at send
+   time (contract: "at most a few promotional messages per week; default 3/7d,
+   configurable"):
+   - **Platform cap** — total promotional messages (campaign + newsletter) a user
+     may receive in a trailing 7 days. Default **3**, stored in `growth_settings`
+     (`promo_weekly_cap`) so it is configurable without a deploy.
+   - **Per-campaign cap** — `ad_campaigns.frequency_per_week`: how often *one*
+     campaign may hit the same user in 7 days. Both are checked in
+     `campaign_eligible_recipients` and re-checked in `record_campaign_send`.
+
+5. **Entitlements tie to `subscriptions.plan`.** I add `plans` (keyed by the same
+   text `subscriptions.plan` already holds) + a FK, plus typed caps
+   (`max_locations`, `blasts_per_month`, `featured_per_week`, `team_seats`,
+   `analytics_level`, …) and an optional `plan_features` EAV table for
+   overrides/flags A9 hasn't first-classed. Helper RPCs
+   (`can_send_blast`/`can_add_location`/`can_feature`) are the checks the code and
+   RLS-adjacent RPCs call. **A9 PRICING owns the actual rows/prices**; I seed
+   FK-satisfying placeholders incl. the existing `'standard'` value.
+
+6. **Coarse location only, consent-gated.** `user_locations` stores city/region/
+   country + a **city-centroid** `geog` — never a raw IP, never street-level.
+   The IP→geo resolution happens in the sign-in Edge Function (A3 owns it):
+   country from Cloudflare's `CF-IPCountry` request header when present; city +
+   region + centroid from a **MaxMind GeoLite2 City** lookup (free, self-hostable
+   — satisfies the "free/self-hostable geo source" constraint) done in the
+   function. The function then calls `capture_location(...)` with the already-
+   coarsened values, and that RPC writes a row **only if the user's
+   `location_opt_in` is true**. Radius targeting uses `ST_DWithin` on the centroid
+   with a **≥5 km minimum radius**, so it can never isolate a block.
+
+7. **PostGIS is available** — installed in the `extensions` schema by
+   `20260710010000_search_geo_privacy.sql` (PostGIS + pg_trgm). All spatial types/
+   functions are referenced schema-qualified (`extensions.geography(Point,4326)`,
+   `extensions.st_dwithin`, `extensions.st_setsrid`, `extensions.st_point`) exactly
+   like `bathrooms.geog` / `nearby_bathrooms`. **Verified: no new extension needed.**
+
+8. **Retention.** `user_locations.expires_at` (default now()+`location_retention_days`,
+   90) and an `analytics_events` time index support a pg_cron purge (scheduling
+   deferred to A13 SCALING / A3). `growth_settings` holds the day-count knobs.
+
+9. **Send logs survive account deletion.** `campaign_sends.user_id` /
+   `newsletter_sends.user_id` / `analytics_events.user_id` are
+   `on delete set null`, so `delete_my_account()` (which cascades `auth.users`)
+   doesn't destroy the CAN-SPAM audit trail or aggregate counts. `user_consents`
+   and `user_locations` cascade-delete with the user (they are the user's PII).
+
+---
+
+## 2. Table catalog (quick reference — exact SQL in §7)
+
+| Table | Purpose | RLS (read / write) | Key indexes |
+| --- | --- | --- | --- |
+| `growth_settings` | Tunable knobs (`promo_weekly_cap=3`, retention days) | admin / RPC | pk(key) |
+| `plans` | Pricing tiers + typed entitlement caps | **public** read / admin RPC | pk(key) |
+| `plan_features` | Per-plan entitlement overrides/flags (EAV) | public read / admin RPC | pk(plan_key,feature) |
+| `user_consents` | 1/user: marketing + location opt-in, GPC | **own** + admin / `set_consent` | pk(user_id) |
+| `user_locations` | Coarse location log, city-centroid `geog` | **admin only** / `capture_location` | GiST(geog), (user_id,captured_at desc), (expires_at) |
+| `user_segments` | Saved segment definitions (predicate jsonb) | admin only / RPC | pk(id) |
+| `segment_members` | Optional materialization of a segment | admin only / RPC | pk(segment_id,user_id) |
+| `ad_campaigns` | Email-blast / featured campaign + targeting | **business-scoped** + admin / RPC | (business_id,status), GiST(target_geog), (status) |
+| `campaign_sends` | Per-recipient send log (cap + suppression + audit) | **admin only** (advertisers get aggregate RPC) / RPC | (user_id,sent_at) partial, unique(unsubscribe_token), (campaign_id,status) |
+| `featured_placements` | Time-boxed in-app/newsletter ad slot | member(own)+**active public** / RPC | (surface,starts_at,ends_at) partial, GiST(region_geog), (business_id,starts_at) |
+| `email_suppressions` | Unsub/bounce/complaint kill-switch | admin only / RPC | unique(email), (user_id) |
+| `newsletter_editions` | Periodic newsletter issue | **sent public** + admin / RPC | pk(id), unique(slug) |
+| `newsletter_sends` | Per-recipient newsletter log | admin only / RPC | (user_id,sent_at) partial, unique(unsubscribe_token) |
+| `analytics_events` | First-party events, no PII, coarse region | admin read / **client insert own** | BRIN(occurred_at), (event,occurred_at desc) |
+
+---
+
+## 3. The eligibility / targeting query — the heart of the system
+
+Given a campaign, return the users who are **marketing-opted-in AND in-region AND
+under both frequency caps AND not suppressed**. It composes cleanly from CTEs:
+
+1. **`latest_loc`** — one row per user: their most recent coarse location
+   (`distinct on (user_id) … order by user_id, captured_at desc`). Feeds both the
+   geo gate and the `region` label attached to each recipient (for aggregate
+   geographic reach).
+2. **`candidates`** — everyone with `user_consents.marketing_opt_in = true`.
+   Absence of a consent row = not a candidate (opt-in, not opt-out).
+3. **Targeting gate** — a candidate passes if the campaign has no geo/segment
+   target (unconstrained), OR their centroid is within `radius_km` of
+   `target_geog` (`ST_DWithin`, clamped to ≥5 km), OR their `ip_region`/`ip_country`
+   matches, OR they are in the campaign's `segment_id` (materialized members or
+   dynamic predicate via `segment_user_ids`).
+4. **Suppression gate** — `not exists` a row in `email_suppressions` matching the
+   user's `user_id` **or** their `auth.users.email` (case-insensitive).
+5. **Frequency gate** — `promo_sends_last_7d(user_id) < promo_weekly_cap()`
+   (platform cap across campaigns + newsletter) **AND**
+   `campaign_sends_last_7d(user_id, campaign_id) < ad_campaigns.frequency_per_week`
+   (per-campaign cap).
+
+The full `campaign_eligible_recipients` body is in §7.13; the same CTE is reused
+by `estimate_campaign_reach` which returns `count(*)` only (advertiser sees "~N
+reachable", never who). Both are `SECURITY DEFINER` and gated so only admins or
+the service-role delivery worker can enumerate recipients — an advertiser can
+never call the recipient-listing form.
+
+---
+
+## 4. SECURITY DEFINER RPC surface
+
+All are `security definer`, `set search_path=''`, re-check authorization
+server-side, and (for state changes) write a `moderation_actions` audit row.
+`42501` → HTTP 403 at PostgREST. Full bodies for the load-bearing ones are in §7;
+the rest are signature + behavior.
+
+### Consent & location
+| RPC | Behavior |
+| --- | --- |
+| `set_consent(p_marketing bool, p_location bool, p_gpc bool, p_source text) → user_consents` | Upserts the caller's row; stamps `consent_updated_at` + per-flag `*_opt_in_at`. **Couples to suppression:** marketing→false inserts a `global_optout` suppression for the caller's email; marketing→true deletes the caller's `unsubscribe`/`global_optout` suppressions (bounce/complaint stay). If `p_gpc` true, forces marketing off (CPRA GPC = opt-out signal). |
+| `capture_location(p_ip_city text, p_ip_region text, p_ip_country text, p_lat float8, p_lng float8, p_source text) → void` | Sign-in hook. Inserts a `user_locations` row for `auth.uid()` **only if `location_opt_in`**; builds `geog` from the city centroid; sets `expires_at`. Never receives a raw IP. No-op (not an error) when consent absent. |
+
+### Campaign lifecycle (A5)
+| RPC | Behavior |
+| --- | --- |
+| `create_campaign(p_business_id, p_type, p_targeting jsonb, p_creative jsonb, p_starts_at, p_ends_at, p_frequency_per_week, p_segment_id) → uuid` | Manager of `p_business_id` creates a `draft`. Checks the plan actually allows the type (`can_send_blast`/`can_feature`). Coerces `radius_km` to ≥5. Audit `create_campaign`. |
+| `submit_campaign(p_campaign_id) → void` | Manager moves `draft`/`rejected`→`pending_review`; validates creative completeness + coarse targeting; stamps `submitted_at`. Audit `submit_campaign`. |
+| `admin_review_campaign(p_campaign_id, p_approve bool, p_notes text) → void` | Admin → `approved` (or `running` if within window) / `rejected`. For a `featured` campaign, approval calls `activate_featured_from_campaign`. Audit `approve_campaign`/`reject_campaign`. |
+| `pause_campaign(p_campaign_id)` / `resume_campaign(p_campaign_id) → void` | Manager or admin toggles `running`↔`paused`. Audit. |
+
+### Send path (A6) — consent + suppression + cap enforced HERE
+| RPC | Behavior |
+| --- | --- |
+| `campaign_eligible_recipients(p_campaign_id) → table(user_id uuid, email text, region text)` | The §3 query. Admin or service-role only. |
+| `estimate_campaign_reach(p_business_id, p_target_region, p_target_country, p_lat, p_lng, p_radius_km, p_segment_id) → int` | Same targeting CTE, returns `count(*)` only. Gated `is_business_manager(p_business_id) or is_admin`. Powers the advertiser's "estimated reach" without exposing identities. |
+| `record_campaign_send(p_campaign_id, p_user_id, p_channel, p_status, p_resend_message_id, p_skip_reason) → uuid` | Inserts a `campaign_sends` row. When `p_status='sent'`, **re-verifies** `is_promo_eligible` (defense-in-depth against races) and downgrades to `skipped` if the user became ineligible. Stamps `sent_at`, captures coarse `region`, mints `unsubscribe_token`. Admin/service-role only. |
+| `unsubscribe_by_token(p_token uuid) → void` | **Anon-callable** (CAN-SPAM one-click + RFC 8058 List-Unsubscribe-Post). Finds the send (campaign or newsletter) by token, suppresses the email (`unsubscribe`), sets `marketing_opt_in=false` if the user is known. Idempotent. Audit `unsubscribe`. |
+| `campaign_reach(p_campaign_id) → record` | Aggregate counts (`queued/sent/delivered/bounced/complained/unsubscribed/skipped`) for the advertiser console. Gated `is_business_member(business_id) or is_admin`. **Never returns user_ids.** |
+
+### Featured placements (A7) & newsletter (A8)
+| RPC | Behavior |
+| --- | --- |
+| `admin_grant_featured_placement(p_business_id, p_bathroom_id, p_surface, p_region, p_lat, p_lng, p_radius_km, p_starts_at, p_ends_at, p_edition_id) → uuid` | Admin creates a placement; enforces `can_feature` (plan `featured_per_week` vs count in trailing 7d). Audit `grant_featured`. |
+| `activate_featured_from_campaign(p_campaign_id) → int` | Materializes placement rows from an approved `featured` campaign; entitlement-checked. Returns count created. |
+| `active_featured_placements(p_surface, p_region, p_lat, p_lng) → setof featured_placements` | **`SECURITY INVOKER`** read for the app to render ads; relies on the "active placements are public" policy. Returns active, in-window rows for the surface near a coarse point/region. No user data. |
+| `admin_create_newsletter(...)`, `admin_schedule_newsletter(id, at)`, `record_newsletter_send(...)` | Admin authors/schedules an edition; `record_newsletter_send` mirrors `record_campaign_send` (consent+suppression+cap, mints token). |
+
+### Segments (A3/A11), entitlements (A9/A12), analytics (A4)
+| RPC | Behavior |
+| --- | --- |
+| `admin_create_segment(p_name, p_predicate jsonb) → uuid` / `admin_materialize_segment(p_segment_id) → int` | Admin defines / refreshes a segment. Predicate DSL owned by A3. |
+| `segment_user_ids(p_segment_id) → table(user_id uuid)` | Resolves a segment to user_ids (materialized `segment_members`, or dynamic predicate). Internal to the eligibility query. |
+| `business_plan(p_business_id) → plans` | The business's current plan row (join `subscriptions`). Gated member/admin. |
+| `entitlement_int(p_business_id, p_feature) → int` | Cap for a feature (typed `plans` column, overridden by `plan_features`); `null` = unlimited. |
+| `can_send_blast(p_business_id) → bool`, `can_add_location(p_business_id) → bool`, `can_feature(p_business_id) → bool` | Used in RPC guards and surfaced to the advertiser console. |
+| `admin_upsert_plan(...)` | Admin (A9's console) edits a plan row. Audit `update_plan`. |
+| `log_event(p_event, p_props jsonb, p_session_id, p_region, p_country) → void` | Optional consent-aware server-side event write. High-volume client events use the direct INSERT policy instead (cheaper). |
+
+---
+
+## 5. Reconciliation with the existing schema
+
+- **`ad_campaigns.business_id → public.businesses(id)`** (`on delete cascade`);
+  `featured_placements.business_id` likewise. Campaign authorship reuses
+  `is_business_member`/`is_business_manager` from `20260711000000`.
+- **`subscriptions.plan → plans(key)`.** New FK on the existing column. Existing
+  rows hold `'standard'`; I seed a `'standard'` plan so the FK validates. Adding
+  the FK is the only change this migration makes to an existing table's shape
+  (plus the two `moderation_actions` CHECK swaps below).
+- **Reuse `is_admin()` / `is_moderator()`** for all admin-only RLS and RPC guards;
+  no new role machinery.
+- **Audit → `public.moderation_actions`** with `detail jsonb`, exactly as the
+  moderation and business RPCs do. New **action** verbs: `create_campaign`,
+  `submit_campaign`, `approve_campaign`, `reject_campaign`, `pause_campaign`,
+  `resume_campaign`, `send_campaign`, `grant_featured`, `revoke_featured`,
+  `create_segment`, `materialize_segment`, `suppress_email`, `unsubscribe`,
+  `create_newsletter`, `send_newsletter`, `update_plan`. New **target_type**
+  values: `campaign`, `placement`, `segment`, `suppression`, `newsletter`,
+  `business`, `user`, `plan`.
+
+  > **⚠ Latent bug found & fixed here.** `20260711000000_business_accounts.sql`
+  > has `admin_approve_access_request` insert `target_type='business'` into
+  > `moderation_actions`, but that migration **only extended the `action` CHECK,
+  > not the `target_type` CHECK** (still `('review','bathroom','report','profile')`
+  > from `20260710020000`). So approving an access request currently violates the
+  > `moderation_actions_target_type_check` constraint. My migration drops and
+  > re-adds **both** CHECKs with the full vocabulary (incl. `'business'`), which
+  > repairs the existing path as a side effect. Flag to A14/orchestrator.
+
+---
+
+## 6. Invented fields & anticipated cross-agent requests
+
+The `docs/growth/` dir was empty when I wrote this, so there are no literal
+"REQUEST TO A2" lines yet. Fields I added beyond the contract's canonical list,
+and why (all are the schema's to own — other agents should reference these names):
+
+| Field / object | Why | For agent |
+| --- | --- | --- |
+| `user_consents.marketing_opt_in_at` / `location_opt_in_at` | Proof-of-consent timestamp (GDPR Art. 7(1) / CPRA) — *when* each flag was granted, distinct from last-touch `consent_updated_at`. | A1 |
+| `growth_settings` table + `promo_weekly_cap` | Makes the "configurable" frequency cap real without a deploy; home for retention knobs. | A12, A13 |
+| `campaign_sends.skip_reason` / status `'skipped'` | Records *why* an eligible-looking recipient was dropped (`suppressed`/`freq_cap`/`not_opted_in`/`out_of_region`) — needed for deliverability debugging + advertiser transparency. | A6, A10 |
+| `campaign_sends.region`, `analytics_events.region/country`, `newsletter_editions.region` | Coarse geo denormalized at write time so aggregate reach/analytics never need to touch `user_locations` (admin-only). | A4, A10, A11 |
+| `featured_placements.surface = 'newsletter'` + `edition_id`, `region_geog`, `radius_km`, `priority` | Contract says the newsletter "may embed featured_placements slots"; needed a surface + edition link. `region_geog`/`radius_km` give featured slots the same coarse geo-targeting as campaigns. | A7, A8 |
+| `ad_campaigns.target_country`, `submitted_at`, `reviewed_by/at`, `review_notes` | Country-level targeting (coarsest tier) + the review workflow columns A5 needs. | A5 |
+| `email_suppressions.reason='global_optout'` + `campaign_id` provenance | Distinguishes a user-level kill-switch from a per-message unsubscribe; links a suppression to the send that caused it. | A1, A6 |
+| `plans` typed caps + `plan_features` EAV | A9 owns values; I own the shape the code checks. | A9, A12 |
+
+---
+
+## 7. THE MIGRATION (one-shot, ordered, ready to apply)
+
+> Drop into `supabase/migrations/20260712000000_growth_platform.sql`. Ordered so
+> every function exists before the policy/RPC that calls it, and every FK target
+> exists before the FK. Heavily commented in the house style.
+
+```sql
+-- Watrloo: growth platform — consent, coarse location, CRM, ad campaigns,
+-- featured placements, newsletter, suppressions, first-party analytics, plans.
+--
+-- Extends the live schema in place. RLS on every table. Mutations go through
+-- SECURITY DEFINER RPCs that re-check role/consent and audit to
+-- moderation_actions. PostGIS lives in the `extensions` schema (installed by
+-- 20260710010000); all spatial calls are schema-qualified. Coarse location only:
+-- city-centroid geog, never a raw IP, never street level. Consent is opt-in;
+-- absence of a row = no consent. Consent + suppression + frequency cap are
+-- enforced at SEND time by the RPCs, not just at signup.
+
+-- ===========================================================================
+-- 0. Tunable settings (configurable caps / retention windows)
+-- ===========================================================================
+create table public.growth_settings (
+  key        text primary key,
+  int_value  integer,
+  text_value text,
+  updated_at timestamptz not null default now(),
+  updated_by uuid references public.profiles (id) on delete set null
+);
+
+insert into public.growth_settings (key, int_value) values
+  ('promo_weekly_cap', 3),           -- max promotional messages / user / 7 days
+  ('location_retention_days', 90),   -- user_locations purge horizon
+  ('analytics_retention_days', 365)  -- analytics_events purge horizon
+on conflict (key) do nothing;
+
+alter table public.growth_settings enable row level security;
+grant select on public.growth_settings to authenticated;
+create policy "admins read growth settings"
+  on public.growth_settings for select to authenticated
+  using ((select public.is_admin()));
+-- Writes: admin RPC / service_role only (no write policy).
+
+create or replace function public.setting_int(p_key text, p_default integer)
+returns integer
+language sql stable security definer set search_path = ''
+as $$
+  select coalesce(
+    (select int_value from public.growth_settings where key = p_key),
+    p_default);
+$$;
+
+create or replace function public.promo_weekly_cap()
+returns integer
+language sql stable security definer set search_path = ''
+as $$ select public.setting_int('promo_weekly_cap', 3); $$;
+
+grant execute on function public.setting_int(text, integer) to authenticated;
+grant execute on function public.promo_weekly_cap() to authenticated;
+
+-- ===========================================================================
+-- 1. Plans + entitlements. A9 PRICING owns the ROWS; this owns the SHAPE.
+--    Keyed by the same text `subscriptions.plan` already stores.
+-- ===========================================================================
+create table public.plans (
+  key             text primary key check (key ~ '^[a-z0-9_]{2,40}$'),
+  name            text not null check (char_length(name) between 1 and 80),
+  description     text check (char_length(description) <= 500),
+  price_cents     integer not null default 0 check (price_cents >= 0),
+  billing_period  text not null default 'month' check (billing_period in ('month','year')),
+  -- Typed entitlement caps the code checks in hot paths. NULL = unlimited.
+  max_locations   integer check (max_locations is null or max_locations >= 1),
+  blasts_per_month  integer not null default 0 check (blasts_per_month >= 0),
+  featured_per_week integer not null default 0 check (featured_per_week >= 0),
+  team_seats      integer check (team_seats is null or team_seats >= 1),
+  analytics_level text not null default 'basic' check (analytics_level in ('none','basic','advanced')),
+  csv_import      boolean not null default false,
+  api_access      boolean not null default false,
+  sort_order      integer not null default 0,
+  is_public       boolean not null default true,   -- shown on the pricing page
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+
+-- Optional EAV overrides / feature flags A9 hasn't first-classed as a column.
+create table public.plan_features (
+  plan_key   text not null references public.plans (key) on delete cascade,
+  feature    text not null check (char_length(feature) between 1 and 60),
+  int_value  integer,
+  bool_value boolean,
+  text_value text,
+  primary key (plan_key, feature)
+);
+
+-- FK-satisfying PLACEHOLDER rows. A9 replaces prices/caps; 'standard' exists so
+-- the FK on the live subscriptions.plan default validates.
+insert into public.plans (key, name, price_cents, max_locations, blasts_per_month, featured_per_week, team_seats, analytics_level, csv_import, api_access, sort_order) values
+  ('standard',  'Standard (legacy alias)', 1000, 1,    2,  1, 2,    'basic',    false, false, 0),
+  ('small',     'Small',                   1000, 1,    2,  1, 2,    'basic',    false, false, 1),
+  ('growth',    'Growth',                  3000, 5,    8,  3, 5,    'advanced', true,  false, 2),
+  ('chain',     'Chain',                   9000, 50,   30, 10, 20,  'advanced', true,  true,  3),
+  ('enterprise','Enterprise',              0,    null, 200, 40, null,'advanced', true,  true,  4)
+on conflict (key) do nothing;
+
+alter table public.plans         enable row level security;
+alter table public.plan_features enable row level security;
+grant select on public.plans         to anon, authenticated;  -- pricing page is public
+grant select on public.plan_features to anon, authenticated;
+create policy "plans are viewable by everyone"
+  on public.plans for select using (is_public or (select public.is_admin()));
+create policy "plan features are viewable by everyone"
+  on public.plan_features for select using (true);
+-- Writes: admin_upsert_plan / service_role only.
+
+-- Tie the existing subscriptions.plan to a real plan. Existing rows are
+-- 'standard', which we seeded above, so this validates.
+alter table public.subscriptions
+  add constraint subscriptions_plan_fkey
+  foreign key (plan) references public.plans (key);
+
+-- ===========================================================================
+-- 2. Consent — one row per user. Absence = no consent. Own-row RLS; writes via
+--    set_consent so timestamps + the consent<->suppression link stay consistent.
+-- ===========================================================================
+create table public.user_consents (
+  user_id             uuid primary key references auth.users (id) on delete cascade,
+  marketing_opt_in    boolean not null default false,
+  location_opt_in     boolean not null default false,
+  gpc_detected        boolean not null default false,
+  source              text check (char_length(source) <= 100),  -- 'signup'|'settings'|'banner'|...
+  marketing_opt_in_at timestamptz,   -- proof-of-consent (A1): when granted
+  location_opt_in_at  timestamptz,
+  consent_updated_at  timestamptz not null default now(),
+  created_at          timestamptz not null default now()
+);
+
+alter table public.user_consents enable row level security;
+grant select on public.user_consents to authenticated;
+create policy "users read their own consent"
+  on public.user_consents for select to authenticated
+  using ((select auth.uid()) = user_id or (select public.is_admin()));
+-- Writes via set_consent only (keeps timestamps + suppression coupling atomic).
+
+-- ===========================================================================
+-- 3. Coarse location log — ADMIN ONLY. City-centroid geog, never a raw IP.
+--    Retention-limited via expires_at (+ a pg_cron purge, scheduled by A13).
+-- ===========================================================================
+create table public.user_locations (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  captured_at timestamptz not null default now(),
+  ip_city    text check (char_length(ip_city) <= 120),
+  ip_region  text check (char_length(ip_region) <= 120),   -- state / province
+  ip_country text check (char_length(ip_country) <= 2),     -- ISO 3166-1 alpha-2
+  geog       extensions.geography(Point, 4326),             -- CITY CENTROID, not precise
+  source     text check (char_length(source) <= 40),        -- 'signin'|'geoip'|'manual'
+  expires_at timestamptz not null default (now() + interval '90 days')
+);
+create index user_locations_user_recent_idx on public.user_locations (user_id, captured_at desc);
+create index user_locations_geog_idx on public.user_locations using gist (geog);
+create index user_locations_expires_idx on public.user_locations (expires_at);
+create index user_locations_country_idx on public.user_locations (ip_country);
+
+alter table public.user_locations enable row level security;
+grant select on public.user_locations to authenticated;   -- RLS narrows to admin
+create policy "admins read all locations"
+  on public.user_locations for select to authenticated
+  using ((select public.is_admin()));
+-- Writes via capture_location only.
+
+-- ===========================================================================
+-- 4. Segments — saved CRM definitions + optional materialization. ADMIN ONLY.
+-- ===========================================================================
+create table public.user_segments (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null check (char_length(name) between 1 and 120),
+  description text check (char_length(description) <= 1000),
+  predicate   jsonb not null default '{}'::jsonb,  -- DSL owned by A3 LOCATION
+  is_dynamic  boolean not null default true,       -- true = evaluate live; false = use segment_members
+  created_by  uuid references public.profiles (id) on delete set null,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create table public.segment_members (
+  segment_id uuid not null references public.user_segments (id) on delete cascade,
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  added_at   timestamptz not null default now(),
+  primary key (segment_id, user_id)
+);
+create index segment_members_user_idx on public.segment_members (user_id);
+
+alter table public.user_segments   enable row level security;
+alter table public.segment_members enable row level security;
+grant select on public.user_segments   to authenticated;
+grant select on public.segment_members to authenticated;
+create policy "admins read segments"
+  on public.user_segments for select to authenticated
+  using ((select public.is_admin()));
+create policy "admins read segment members"
+  on public.segment_members for select to authenticated
+  using ((select public.is_admin()));
+-- Writes via admin_create_segment / admin_materialize_segment only.
+
+-- ===========================================================================
+-- 5. Email suppressions — unsub/bounce/complaint kill-switch. ADMIN ONLY read.
+--    Presence of a row for an email = suppressed. Checked at SEND time.
+-- ===========================================================================
+create table public.email_suppressions (
+  id          uuid primary key default gen_random_uuid(),
+  email       text not null,   -- store lowercased
+  user_id     uuid references auth.users (id) on delete set null,
+  reason      text not null check (reason in ('unsubscribe','bounce','complaint','manual','global_optout')),
+  source      text check (char_length(source) <= 40),  -- 'one_click'|'list_unsub'|'resend_webhook'|'admin'
+  campaign_id uuid references public.ad_campaigns (id) on delete set null,
+  created_at  timestamptz not null default now(),
+  unique (email)   -- one row per address = the kill switch
+);
+create index email_suppressions_user_idx on public.email_suppressions (user_id);
+
+alter table public.email_suppressions enable row level security;
+grant select on public.email_suppressions to authenticated;   -- RLS narrows to admin
+create policy "admins read suppressions"
+  on public.email_suppressions for select to authenticated
+  using ((select public.is_admin()));
+-- Writes via set_consent / unsubscribe_by_token / webhook(service_role) / admin RPC.
+
+-- ===========================================================================
+-- 6. Ad campaigns — business-scoped. Targeting is COARSE (radius >= 5km on a
+--    city centroid). Lifecycle status advances only through the RPCs.
+-- ===========================================================================
+create table public.ad_campaigns (
+  id                 uuid primary key default gen_random_uuid(),
+  business_id        uuid not null references public.businesses (id) on delete cascade,
+  type               text not null check (type in ('email_blast','featured')),
+  status             text not null default 'draft'
+                     check (status in ('draft','pending_review','approved','running','paused','done','rejected')),
+  -- targeting (any subset; all NULL = untargeted / whole audience)
+  target_region      text check (char_length(target_region) <= 120),
+  target_country     text check (char_length(target_country) <= 2),
+  target_geog        extensions.geography(Point, 4326),   -- city centroid
+  radius_km          double precision check (radius_km is null or radius_km between 5 and 500),
+  segment_id         uuid references public.user_segments (id) on delete set null,
+  -- schedule + cap
+  starts_at          timestamptz,
+  ends_at            timestamptz,
+  frequency_per_week smallint not null default 3 check (frequency_per_week between 1 and 7),
+  -- creative: {subject, body_html, body_text, image_url, link_url, cta}
+  creative           jsonb not null default '{}'::jsonb,
+  -- review workflow
+  submitted_at       timestamptz,
+  reviewed_by        uuid references public.profiles (id) on delete set null,
+  reviewed_at        timestamptz,
+  review_notes       text check (char_length(review_notes) <= 2000),
+  created_by         uuid references public.profiles (id) on delete set null,
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now(),
+  check (ends_at is null or starts_at is null or ends_at >= starts_at)
+);
+create index ad_campaigns_business_idx on public.ad_campaigns (business_id, status);
+create index ad_campaigns_status_idx   on public.ad_campaigns (status)
+  where status in ('approved','running');
+create index ad_campaigns_target_geog_idx on public.ad_campaigns using gist (target_geog);
+create index ad_campaigns_segment_idx on public.ad_campaigns (segment_id);
+
+alter table public.ad_campaigns enable row level security;
+grant select, insert, update on public.ad_campaigns to authenticated;
+-- Members see ONLY their own business's campaigns; admins see all.
+create policy "members read their campaigns"
+  on public.ad_campaigns for select to authenticated
+  using ((select public.is_business_member(business_id)) or (select public.is_admin()));
+-- Managers create drafts for their business (status pinned to draft).
+create policy "managers create draft campaigns"
+  on public.ad_campaigns for insert to authenticated
+  with check (
+    (select public.is_business_manager(business_id))
+    and status = 'draft'
+    and created_by = (select auth.uid())
+  );
+-- Managers edit content ONLY while draft/rejected; status is pinned so they can
+-- never self-approve. All forward transitions go through the RPCs (definer).
+create policy "managers edit their draft campaigns"
+  on public.ad_campaigns for update to authenticated
+  using ((select public.is_business_manager(business_id)) and status in ('draft','rejected'))
+  with check ((select public.is_business_manager(business_id)) and status in ('draft','rejected'));
+
+-- ===========================================================================
+-- 7. Campaign sends — per-recipient log. ADMIN ONLY (advertisers get aggregate
+--    counts via campaign_reach). Powers cap + suppression + audit + reach.
+-- ===========================================================================
+create table public.campaign_sends (
+  id                uuid primary key default gen_random_uuid(),
+  campaign_id       uuid not null references public.ad_campaigns (id) on delete cascade,
+  user_id           uuid references auth.users (id) on delete set null,  -- survives account deletion
+  channel           text not null default 'email' check (channel in ('email','in_app','newsletter')),
+  status            text not null default 'queued'
+                    check (status in ('queued','sent','delivered','bounced','complained','failed','skipped')),
+  skip_reason       text check (skip_reason in ('not_opted_in','suppressed','freq_cap','out_of_region')),
+  unsubscribe_token uuid not null default gen_random_uuid(),
+  region            text check (char_length(region) <= 120),  -- coarse, denormalized for aggregate reach
+  resend_message_id text,
+  queued_at         timestamptz not null default now(),
+  sent_at           timestamptz,
+  updated_at        timestamptz not null default now()
+);
+-- Frequency-cap lookup: "how many promos has this user had recently".
+create index campaign_sends_user_sent_idx on public.campaign_sends (user_id, sent_at desc)
+  where status in ('sent','delivered');
+-- Per-campaign frequency + duplicate-suppression lookup.
+create index campaign_sends_campaign_user_idx on public.campaign_sends (campaign_id, user_id);
+-- Aggregate reach counts.
+create index campaign_sends_campaign_status_idx on public.campaign_sends (campaign_id, status);
+create unique index campaign_sends_token_idx on public.campaign_sends (unsubscribe_token);
+
+alter table public.campaign_sends enable row level security;
+grant select on public.campaign_sends to authenticated;   -- RLS narrows to admin
+create policy "admins read campaign sends"
+  on public.campaign_sends for select to authenticated
+  using ((select public.is_admin()));
+-- Writes via record_campaign_send only. Advertisers use campaign_reach (counts).
+
+-- ===========================================================================
+-- 8. Featured placements — time-boxed slot. Member sees own; ACTIVE ones public
+--    so the app can render the ad. Frequency-limited per week via can_feature.
+-- ===========================================================================
+create table public.featured_placements (
+  id          uuid primary key default gen_random_uuid(),
+  campaign_id uuid references public.ad_campaigns (id) on delete set null,
+  business_id uuid not null references public.businesses (id) on delete cascade,
+  bathroom_id uuid references public.bathrooms (id) on delete set null,  -- promoted listing
+  surface     text not null check (surface in ('map','browse','detail','newsletter')),
+  region      text check (char_length(region) <= 120),
+  region_geog extensions.geography(Point, 4326),
+  radius_km   double precision check (radius_km is null or radius_km between 5 and 500),
+  edition_id  uuid references public.newsletter_editions (id) on delete set null, -- when surface='newsletter'
+  priority    smallint not null default 0,
+  starts_at   timestamptz not null,
+  ends_at     timestamptz not null,
+  status      text not null default 'scheduled'
+              check (status in ('scheduled','active','paused','done','rejected')),
+  created_by  uuid references public.profiles (id) on delete set null,
+  created_at  timestamptz not null default now(),
+  check (ends_at >= starts_at)
+);
+create index featured_active_idx on public.featured_placements (surface, starts_at, ends_at)
+  where status = 'active';
+create index featured_geog_idx on public.featured_placements using gist (region_geog);
+create index featured_business_idx on public.featured_placements (business_id, starts_at desc);
+create index featured_edition_idx on public.featured_placements (edition_id);
+
+alter table public.featured_placements enable row level security;
+grant select on public.featured_placements to anon, authenticated;
+-- Active, in-window placements are public so the app can render them (like
+-- verified claims). No user PII on the row.
+create policy "active placements are public"
+  on public.featured_placements for select
+  using (status = 'active' and now() between starts_at and ends_at);
+-- Business members see all statuses of their own placements; admins see all.
+create policy "members read their placements"
+  on public.featured_placements for select to authenticated
+  using ((select public.is_business_member(business_id)) or (select public.is_admin()));
+-- Writes via admin_grant_featured_placement / activate_featured_from_campaign.
+
+-- ===========================================================================
+-- 9. Newsletter — editions + per-recipient sends.
+-- ===========================================================================
+create table public.newsletter_editions (
+  id          uuid primary key default gen_random_uuid(),
+  title       text not null check (char_length(title) between 1 and 200),
+  slug        text unique check (slug ~ '^[a-z0-9-]{1,120}$'),
+  status      text not null default 'draft'
+              check (status in ('draft','scheduled','sending','sent','archived')),
+  subject     text check (char_length(subject) <= 200),
+  body_html   text,
+  body_text   text,
+  region      text check (char_length(region) <= 120),  -- optional coarse targeting
+  scheduled_at timestamptz,
+  sent_at     timestamptz,
+  created_by  uuid references public.profiles (id) on delete set null,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create table public.newsletter_sends (
+  id                uuid primary key default gen_random_uuid(),
+  edition_id        uuid not null references public.newsletter_editions (id) on delete cascade,
+  user_id           uuid references auth.users (id) on delete set null,
+  status            text not null default 'queued'
+                    check (status in ('queued','sent','delivered','bounced','complained','failed','skipped')),
+  skip_reason       text check (skip_reason in ('not_opted_in','suppressed','freq_cap','out_of_region')),
+  unsubscribe_token uuid not null default gen_random_uuid(),
+  resend_message_id text,
+  queued_at         timestamptz not null default now(),
+  sent_at           timestamptz,
+  unique (edition_id, user_id)
+);
+create index newsletter_sends_user_sent_idx on public.newsletter_sends (user_id, sent_at desc)
+  where status in ('sent','delivered');
+create unique index newsletter_sends_token_idx on public.newsletter_sends (unsubscribe_token);
+
+alter table public.newsletter_editions enable row level security;
+alter table public.newsletter_sends    enable row level security;
+grant select on public.newsletter_editions to anon, authenticated;
+grant select on public.newsletter_sends    to authenticated;
+-- Sent/archived editions are a public web archive; drafts admin-only.
+create policy "sent newsletters are public"
+  on public.newsletter_editions for select
+  using (status in ('sent','archived') or (select public.is_admin()));
+create policy "admins read newsletter sends"
+  on public.newsletter_sends for select to authenticated
+  using ((select public.is_admin()));
+
+-- ===========================================================================
+-- 10. First-party analytics. Admin read; clients insert their OWN events. No
+--     PII in props. High-volume: BRIN time index; monthly partitioning is a
+--     later scaling step (A4/A13).
+-- ===========================================================================
+create table public.analytics_events (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid references auth.users (id) on delete set null,  -- nullable/anon
+  session_id  text check (char_length(session_id) <= 64),          -- opaque, not PII
+  event       text not null check (char_length(event) between 1 and 80),
+  props       jsonb not null default '{}'::jsonb,                   -- NO PII
+  region      text check (char_length(region) <= 120),             -- coarse
+  country     text check (char_length(country) <= 2),
+  occurred_at timestamptz not null default now(),
+  ingested_at timestamptz not null default now()
+);
+create index analytics_events_time_brin on public.analytics_events using brin (occurred_at);
+create index analytics_events_event_idx on public.analytics_events (event, occurred_at desc);
+create index analytics_events_user_idx  on public.analytics_events (user_id) where user_id is not null;
+
+alter table public.analytics_events enable row level security;
+grant select on public.analytics_events to authenticated;  -- RLS narrows to admin
+grant insert on public.analytics_events to anon, authenticated;
+create policy "admins read analytics"
+  on public.analytics_events for select to authenticated
+  using ((select public.is_admin()));
+-- Cheap first-party ingestion: a client may write only anonymous events or its
+-- own. Consent nuance (attach user_id only with consent) is enforced client-side
+-- and, for server writes, by log_event. See A4 ANALYTICS.
+create policy "clients log their own events"
+  on public.analytics_events for insert to anon, authenticated
+  with check (user_id is null or user_id = (select auth.uid()));
+
+-- ===========================================================================
+-- 11. updated_at triggers (reuse public.touch_updated_at from init).
+-- ===========================================================================
+create trigger plans_touch_updated_at
+  before update on public.plans for each row execute function public.touch_updated_at();
+create trigger ad_campaigns_touch_updated_at
+  before update on public.ad_campaigns for each row execute function public.touch_updated_at();
+create trigger campaign_sends_touch_updated_at
+  before update on public.campaign_sends for each row execute function public.touch_updated_at();
+create trigger user_segments_touch_updated_at
+  before update on public.user_segments for each row execute function public.touch_updated_at();
+create trigger newsletter_editions_touch_updated_at
+  before update on public.newsletter_editions for each row execute function public.touch_updated_at();
+
+-- ===========================================================================
+-- 12. Frequency-cap + eligibility helpers.
+-- ===========================================================================
+-- Promotional messages (campaign + newsletter) a user received in trailing 7d.
+create or replace function public.promo_sends_last_7d(p_user_id uuid)
+returns integer
+language sql stable security definer set search_path = ''
+as $$
+  select
+    (select count(*) from public.campaign_sends cs
+       where cs.user_id = p_user_id and cs.status in ('sent','delivered')
+         and cs.sent_at >= now() - interval '7 days')
+  + (select count(*) from public.newsletter_sends ns
+       where ns.user_id = p_user_id and ns.status in ('sent','delivered')
+         and ns.sent_at >= now() - interval '7 days');
+$$;
+
+-- Sends of ONE campaign to a user in trailing 7d (per-campaign cap).
+create or replace function public.campaign_sends_last_7d(p_user_id uuid, p_campaign_id uuid)
+returns integer
+language sql stable security definer set search_path = ''
+as $$
+  select count(*)::int from public.campaign_sends cs
+   where cs.user_id = p_user_id and cs.campaign_id = p_campaign_id
+     and cs.status in ('sent','delivered')
+     and cs.sent_at >= now() - interval '7 days';
+$$;
+
+-- Is a user eligible for ANY promo right now: opted-in, not suppressed, under
+-- the platform weekly cap. (Per-campaign cap + region are applied by callers.)
+create or replace function public.is_promo_eligible(p_user_id uuid)
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select
+    exists (select 1 from public.user_consents c
+              where c.user_id = p_user_id and c.marketing_opt_in)
+    and not exists (
+      select 1 from public.email_suppressions s
+      join auth.users u on u.id = p_user_id
+      where s.user_id = p_user_id or lower(s.email) = lower(u.email))
+    and public.promo_sends_last_7d(p_user_id) < public.promo_weekly_cap();
+$$;
+
+-- Resolve a segment to user_ids (materialized members, else dynamic predicate).
+-- Dynamic predicate evaluation is a placeholder; A3 LOCATION owns the DSL.
+create or replace function public.segment_user_ids(p_segment_id uuid)
+returns table (user_id uuid)
+language plpgsql stable security definer set search_path = ''
+as $$
+declare seg public.user_segments;
+begin
+  select * into seg from public.user_segments where id = p_segment_id;
+  if seg.id is null then return; end if;
+
+  if not seg.is_dynamic then
+    return query select m.user_id from public.segment_members m where m.segment_id = p_segment_id;
+    return;
+  end if;
+
+  -- Minimal dynamic predicate: {country, region, marketing_opt_in, active_since}.
+  -- A3 extends this. Uses the latest coarse location per user.
+  return query
+  with latest_loc as (
+    select distinct on (l.user_id) l.user_id, l.ip_region, l.ip_country
+    from public.user_locations l order by l.user_id, l.captured_at desc)
+  select c.user_id
+  from public.user_consents c
+  left join latest_loc ll on ll.user_id = c.user_id
+  where (not (seg.predicate ? 'marketing_opt_in')
+         or c.marketing_opt_in = (seg.predicate->>'marketing_opt_in')::boolean)
+    and (not (seg.predicate ? 'country')
+         or upper(ll.ip_country) = upper(seg.predicate->>'country'))
+    and (not (seg.predicate ? 'region')
+         or lower(ll.ip_region) = lower(seg.predicate->>'region'));
+end;
+$$;
+
+grant execute on function public.promo_sends_last_7d(uuid) to authenticated;
+grant execute on function public.campaign_sends_last_7d(uuid, uuid) to authenticated;
+grant execute on function public.is_promo_eligible(uuid) to authenticated;
+grant execute on function public.segment_user_ids(uuid) to authenticated;
+
+-- ===========================================================================
+-- 13. THE eligibility / targeting query — recipients for a campaign.
+--     Admin or service-role (delivery worker) only. Advertisers cannot call it.
+-- ===========================================================================
+create or replace function public.campaign_eligible_recipients(p_campaign_id uuid)
+returns table (user_id uuid, email text, region text)
+language plpgsql stable security definer set search_path = ''
+as $$
+declare
+  c   public.ad_campaigns;
+  cap integer := public.promo_weekly_cap();
+begin
+  -- authz: admins, or the delivery worker (service_role has no auth.uid()).
+  if (select auth.uid()) is not null and not public.is_admin() then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+
+  select * into c from public.ad_campaigns where id = p_campaign_id;
+  if c.id is null then
+    raise exception 'no such campaign' using errcode = 'P0002';
+  end if;
+
+  return query
+  with latest_loc as (
+    select distinct on (l.user_id)
+           l.user_id, l.geog, l.ip_region, l.ip_country
+    from public.user_locations l
+    order by l.user_id, l.captured_at desc
+  ),
+  candidates as (                                   -- opted-in only
+    select con.user_id from public.user_consents con where con.marketing_opt_in
+  ),
+  targeted as (
+    select cand.user_id
+    from candidates cand
+    left join latest_loc ll on ll.user_id = cand.user_id
+    where
+      -- segment gate
+      ( c.segment_id is null
+        or cand.user_id in (select s.user_id from public.segment_user_ids(c.segment_id) s) )
+      and
+      -- coarse geo gate (untargeted, or radius on centroid, or region, or country)
+      ( (c.target_geog is null and c.target_region is null and c.target_country is null)
+        or (c.target_geog is not null and ll.geog is not null
+             and extensions.st_dwithin(
+                   ll.geog, c.target_geog,
+                   greatest(5, least(coalesce(c.radius_km, 50), 500)) * 1000.0))
+        or (c.target_region is not null and ll.ip_region is not null
+             and lower(ll.ip_region) = lower(c.target_region))
+        or (c.target_country is not null and ll.ip_country is not null
+             and upper(ll.ip_country) = upper(c.target_country)) )
+  )
+  select t.user_id, u.email, coalesce(ll.ip_region, ll.ip_country) as region
+  from targeted t
+  join auth.users u on u.id = t.user_id
+  left join latest_loc ll on ll.user_id = t.user_id
+  where u.email is not null
+    -- suppression gate (by user_id OR email)
+    and not exists (
+      select 1 from public.email_suppressions s
+      where s.user_id = t.user_id or lower(s.email) = lower(u.email))
+    -- platform weekly cap  AND  per-campaign weekly cap
+    and public.promo_sends_last_7d(t.user_id) < cap
+    and public.campaign_sends_last_7d(t.user_id, p_campaign_id) < c.frequency_per_week;
+end;
+$$;
+
+-- Advertiser-facing: COUNT of reachable users for a proposed targeting, no ids.
+create or replace function public.estimate_campaign_reach(
+  p_business_id uuid,
+  p_target_region text default null,
+  p_target_country text default null,
+  p_lat double precision default null,
+  p_lng double precision default null,
+  p_radius_km double precision default null,
+  p_segment_id uuid default null
+)
+returns integer
+language plpgsql stable security definer set search_path = ''
+as $$
+declare
+  v_geog extensions.geography(Point, 4326);
+  v_count integer;
+begin
+  if not ((select public.is_business_manager(p_business_id)) or (select public.is_admin())) then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+  if p_lat is not null and p_lng is not null then
+    v_geog := extensions.st_setsrid(extensions.st_point(p_lng, p_lat), 4326)::extensions.geography;
+  end if;
+
+  with latest_loc as (
+    select distinct on (l.user_id) l.user_id, l.geog, l.ip_region, l.ip_country
+    from public.user_locations l order by l.user_id, l.captured_at desc),
+  candidates as (
+    select con.user_id from public.user_consents con where con.marketing_opt_in)
+  select count(*) into v_count
+  from candidates cand
+  left join latest_loc ll on ll.user_id = cand.user_id
+  join auth.users u on u.id = cand.user_id
+  where u.email is not null
+    and ( p_segment_id is null
+          or cand.user_id in (select s.user_id from public.segment_user_ids(p_segment_id) s) )
+    and ( (v_geog is null and p_target_region is null and p_target_country is null)
+          or (v_geog is not null and ll.geog is not null
+               and extensions.st_dwithin(ll.geog, v_geog,
+                     greatest(5, least(coalesce(p_radius_km, 50), 500)) * 1000.0))
+          or (p_target_region is not null and lower(ll.ip_region) = lower(p_target_region))
+          or (p_target_country is not null and upper(ll.ip_country) = upper(p_target_country)) )
+    and not exists (
+      select 1 from public.email_suppressions s
+      where s.user_id = cand.user_id or lower(s.email) = lower(u.email));
+  return coalesce(v_count, 0);
+end;
+$$;
+
+grant execute on function public.campaign_eligible_recipients(uuid) to authenticated, service_role;
+grant execute on function public.estimate_campaign_reach(uuid, text, text, double precision, double precision, double precision, uuid) to authenticated;
+
+-- ===========================================================================
+-- 14. Consent + location capture RPCs.
+-- ===========================================================================
+create or replace function public.set_consent(
+  p_marketing boolean, p_location boolean, p_gpc boolean default false, p_source text default 'settings')
+returns public.user_consents
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  uid uuid := (select auth.uid());
+  v_marketing boolean := p_marketing;
+  v_email text;
+  v_row public.user_consents;
+begin
+  if uid is null then raise exception 'not authenticated' using errcode = '42501'; end if;
+  -- GPC is a legally-binding opt-out signal (CPRA): it forces marketing off.
+  if p_gpc then v_marketing := false; end if;
+
+  insert into public.user_consents as c
+    (user_id, marketing_opt_in, location_opt_in, gpc_detected, source,
+     marketing_opt_in_at, location_opt_in_at, consent_updated_at)
+  values (uid, v_marketing, p_location, p_gpc, p_source,
+     case when v_marketing then now() end,
+     case when p_location  then now() end, now())
+  on conflict (user_id) do update set
+     marketing_opt_in = excluded.marketing_opt_in,
+     location_opt_in  = excluded.location_opt_in,
+     gpc_detected     = excluded.gpc_detected,
+     source           = excluded.source,
+     marketing_opt_in_at = case when excluded.marketing_opt_in and not c.marketing_opt_in
+                                then now() else c.marketing_opt_in_at end,
+     location_opt_in_at  = case when excluded.location_opt_in and not c.location_opt_in
+                                then now() else c.location_opt_in_at end,
+     consent_updated_at = now()
+  returning * into v_row;
+
+  select email into v_email from auth.users where id = uid;
+  if not v_marketing then
+    -- Opting out = global kill switch.
+    insert into public.email_suppressions (email, user_id, reason, source)
+    values (lower(v_email), uid, 'global_optout', 'consent')
+    on conflict (email) do update set reason = 'global_optout', user_id = uid;
+  else
+    -- Re-subscribing clears user-driven suppressions, NOT bounces/complaints.
+    delete from public.email_suppressions
+     where user_id = uid and reason in ('unsubscribe','global_optout');
+  end if;
+  return v_row;
+end;
+$$;
+
+create or replace function public.capture_location(
+  p_ip_city text, p_ip_region text, p_ip_country text,
+  p_lat double precision, p_lng double precision, p_source text default 'signin')
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  uid uuid := (select auth.uid());
+  v_days integer := public.setting_int('location_retention_days', 90);
+begin
+  if uid is null then raise exception 'not authenticated' using errcode = '42501'; end if;
+  -- Silently no-op without location consent (not an error — keeps sign-in clean).
+  if not exists (select 1 from public.user_consents c
+                 where c.user_id = uid and c.location_opt_in) then
+    return;
+  end if;
+
+  insert into public.user_locations (user_id, ip_city, ip_region, ip_country, geog, source, expires_at)
+  values (uid, p_ip_city, p_ip_region, upper(left(p_ip_country, 2)),
+    case when p_lat is not null and p_lng is not null
+      then extensions.st_setsrid(extensions.st_point(p_lng, p_lat), 4326)::extensions.geography end,
+    p_source, now() + make_interval(days => v_days));
+end;
+$$;
+
+grant execute on function public.set_consent(boolean, boolean, boolean, text) to authenticated;
+grant execute on function public.capture_location(text, text, text, double precision, double precision, text) to authenticated;
+
+-- ===========================================================================
+-- 15. Unsubscribe by token — anon-callable (CAN-SPAM one-click / RFC 8058).
+-- ===========================================================================
+create or replace function public.unsubscribe_by_token(p_token uuid)
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_user uuid;
+  v_email text;
+  v_campaign uuid;
+begin
+  -- Look up the token in campaign sends, then newsletter sends.
+  select cs.user_id, cs.campaign_id into v_user, v_campaign
+  from public.campaign_sends cs where cs.unsubscribe_token = p_token;
+  if not found then
+    select ns.user_id into v_user
+    from public.newsletter_sends ns where ns.unsubscribe_token = p_token;
+    if not found then return; end if;   -- unknown token: no-op, never error
+  end if;
+
+  if v_user is not null then
+    select email into v_email from auth.users where id = v_user;
+    update public.user_consents set marketing_opt_in = false, consent_updated_at = now()
+     where user_id = v_user;
+  end if;
+
+  if v_email is not null then
+    insert into public.email_suppressions (email, user_id, reason, source, campaign_id)
+    values (lower(v_email), v_user, 'unsubscribe', 'one_click', v_campaign)
+    on conflict (email) do update set reason = 'unsubscribe';
+  end if;
+
+  insert into public.moderation_actions (actor_id, action, target_type, target_id, detail)
+  values (v_user, 'unsubscribe', 'user', coalesce(v_user, gen_random_uuid()),
+          jsonb_build_object('token', p_token, 'campaign', v_campaign));
+end;
+$$;
+
+grant execute on function public.unsubscribe_by_token(uuid) to anon, authenticated;
+
+-- ===========================================================================
+-- 16. Analytics log RPC (consent-aware server-side path; clients may INSERT).
+-- ===========================================================================
+create or replace function public.log_event(
+  p_event text, p_props jsonb default '{}'::jsonb, p_session_id text default null,
+  p_region text default null, p_country text default null)
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+declare uid uuid := (select auth.uid());
+begin
+  insert into public.analytics_events (user_id, session_id, event, props, region, country)
+  values (uid, p_session_id, left(p_event, 80), coalesce(p_props, '{}'::jsonb),
+          p_region, upper(left(p_country, 2)));
+end;
+$$;
+grant execute on function public.log_event(text, jsonb, text, text, text) to anon, authenticated;
+
+-- ===========================================================================
+-- 17. Entitlement helpers (A9 caps / A12 limits).
+-- ===========================================================================
+create or replace function public.business_plan(p_business_id uuid)
+returns public.plans
+language sql stable security definer set search_path = ''
+as $$
+  select p.* from public.plans p
+  join public.subscriptions s on s.plan = p.key
+  where s.business_id = p_business_id;
+$$;
+
+create or replace function public.entitlement_int(p_business_id uuid, p_feature text)
+returns integer
+language sql stable security definer set search_path = ''
+as $$
+  select coalesce(
+    (select pf.int_value from public.plan_features pf
+       join public.subscriptions s on s.plan = pf.plan_key
+      where s.business_id = p_business_id and pf.feature = p_feature),
+    (select case p_feature
+              when 'max_locations'     then p.max_locations
+              when 'blasts_per_month'  then p.blasts_per_month
+              when 'featured_per_week' then p.featured_per_week
+              when 'team_seats'        then p.team_seats
+            end
+       from public.plans p join public.subscriptions s on s.plan = p.key
+      where s.business_id = p_business_id));
+$$;
+
+create or replace function public.can_add_location(p_business_id uuid)
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select coalesce(
+    (select count(*) from public.bathroom_claims c
+       where c.business_id = p_business_id and c.status = 'verified')
+    < public.entitlement_int(p_business_id, 'max_locations'), true);  -- null cap = unlimited
+$$;
+
+create or replace function public.can_send_blast(p_business_id uuid)
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select coalesce(
+    (select count(*) from public.ad_campaigns a
+       where a.business_id = p_business_id and a.type = 'email_blast'
+         and a.status in ('approved','running','done')
+         and date_trunc('month', coalesce(a.starts_at, a.submitted_at, a.created_at))
+             = date_trunc('month', now()))
+    < public.entitlement_int(p_business_id, 'blasts_per_month'), true);
+$$;
+
+create or replace function public.can_feature(p_business_id uuid)
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select coalesce(
+    (select count(*) from public.featured_placements f
+       where f.business_id = p_business_id
+         and f.starts_at >= now() - interval '7 days')
+    < public.entitlement_int(p_business_id, 'featured_per_week'), true);
+$$;
+
+grant execute on function public.business_plan(uuid)      to authenticated;
+grant execute on function public.entitlement_int(uuid, text) to authenticated;
+grant execute on function public.can_add_location(uuid)   to authenticated;
+grant execute on function public.can_send_blast(uuid)     to authenticated;
+grant execute on function public.can_feature(uuid)        to authenticated;
+
+-- ===========================================================================
+-- 18. Campaign lifecycle RPCs (A5). Guards + audit; status advances here only.
+-- ===========================================================================
+create or replace function public.create_campaign(
+  p_business_id uuid, p_type text, p_targeting jsonb, p_creative jsonb,
+  p_starts_at timestamptz default null, p_ends_at timestamptz default null,
+  p_frequency_per_week smallint default 3, p_segment_id uuid default null)
+returns uuid
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_id uuid;
+  v_geog extensions.geography(Point, 4326);
+begin
+  if not (select public.is_business_manager(p_business_id)) then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+  if p_type not in ('email_blast','featured') then
+    raise exception 'invalid type' using errcode = '22023';
+  end if;
+  if p_type = 'email_blast' and not public.can_send_blast(p_business_id) then
+    raise exception 'blast allowance exhausted' using errcode = '22023';
+  end if;
+  if p_type = 'featured' and not public.can_feature(p_business_id) then
+    raise exception 'featured allowance exhausted' using errcode = '22023';
+  end if;
+  if (p_targeting ? 'lat') and (p_targeting ? 'lng') then
+    v_geog := extensions.st_setsrid(
+      extensions.st_point((p_targeting->>'lng')::float8, (p_targeting->>'lat')::float8), 4326)::extensions.geography;
+  end if;
+
+  insert into public.ad_campaigns
+    (business_id, type, status, target_region, target_country, target_geog, radius_km,
+     segment_id, starts_at, ends_at, frequency_per_week, creative, created_by)
+  values (p_business_id, p_type, 'draft',
+     p_targeting->>'region', upper(left(p_targeting->>'country', 2)), v_geog,
+     greatest(5, coalesce((p_targeting->>'radius_km')::float8, 50)),
+     p_segment_id, p_starts_at, p_ends_at,
+     greatest(1, least(coalesce(p_frequency_per_week, 3), 7)), coalesce(p_creative,'{}'::jsonb),
+     (select auth.uid()))
+  returning id into v_id;
+
+  insert into public.moderation_actions (actor_id, action, target_type, target_id, detail)
+  values ((select auth.uid()), 'create_campaign', 'campaign', v_id,
+          jsonb_build_object('business', p_business_id, 'type', p_type));
+  return v_id;
+end;
+$$;
+
+create or replace function public.submit_campaign(p_campaign_id uuid)
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+declare v public.ad_campaigns;
+begin
+  select * into v from public.ad_campaigns where id = p_campaign_id;
+  if v.id is null or not (select public.is_business_manager(v.business_id)) then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+  if v.status not in ('draft','rejected') then
+    raise exception 'not editable' using errcode = '22023';
+  end if;
+  if coalesce(v.creative->>'subject','') = '' or coalesce(v.creative->>'body_html','') = '' then
+    raise exception 'creative incomplete' using errcode = '22023';
+  end if;
+
+  update public.ad_campaigns set status = 'pending_review', submitted_at = now()
+   where id = p_campaign_id;
+  insert into public.moderation_actions (actor_id, action, target_type, target_id)
+  values ((select auth.uid()), 'submit_campaign', 'campaign', p_campaign_id);
+end;
+$$;
+
+create or replace function public.admin_review_campaign(
+  p_campaign_id uuid, p_approve boolean, p_notes text default null)
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+declare v public.ad_campaigns;
+begin
+  if not public.is_admin() then raise exception 'not authorized' using errcode = '42501'; end if;
+  select * into v from public.ad_campaigns where id = p_campaign_id;
+  if v.id is null or v.status <> 'pending_review' then
+    raise exception 'not pending review' using errcode = '22023';
+  end if;
+
+  update public.ad_campaigns set
+     status = case when p_approve then
+                case when now() between coalesce(starts_at, now()) and coalesce(ends_at, 'infinity'::timestamptz)
+                     then 'running' else 'approved' end
+              else 'rejected' end,
+     reviewed_by = (select auth.uid()), reviewed_at = now(), review_notes = p_notes
+   where id = p_campaign_id;
+
+  if p_approve and v.type = 'featured' then
+    perform public.activate_featured_from_campaign(p_campaign_id);
+  end if;
+
+  insert into public.moderation_actions (actor_id, action, target_type, target_id, detail)
+  values ((select auth.uid()),
+          case when p_approve then 'approve_campaign' else 'reject_campaign' end,
+          'campaign', p_campaign_id, jsonb_build_object('notes', p_notes));
+end;
+$$;
+
+create or replace function public.pause_campaign(p_campaign_id uuid)
+returns void language plpgsql security definer set search_path = ''
+as $$
+declare v public.ad_campaigns;
+begin
+  select * into v from public.ad_campaigns where id = p_campaign_id;
+  if v.id is null or not ((select public.is_business_manager(v.business_id)) or (select public.is_admin())) then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+  update public.ad_campaigns set status = 'paused' where id = p_campaign_id and status = 'running';
+  insert into public.moderation_actions (actor_id, action, target_type, target_id)
+  values ((select auth.uid()), 'pause_campaign', 'campaign', p_campaign_id);
+end;
+$$;
+
+create or replace function public.resume_campaign(p_campaign_id uuid)
+returns void language plpgsql security definer set search_path = ''
+as $$
+declare v public.ad_campaigns;
+begin
+  select * into v from public.ad_campaigns where id = p_campaign_id;
+  if v.id is null or not ((select public.is_business_manager(v.business_id)) or (select public.is_admin())) then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+  update public.ad_campaigns set status = 'running' where id = p_campaign_id and status = 'paused';
+  insert into public.moderation_actions (actor_id, action, target_type, target_id)
+  values ((select auth.uid()), 'resume_campaign', 'campaign', p_campaign_id);
+end;
+$$;
+
+grant execute on function public.create_campaign(uuid, text, jsonb, jsonb, timestamptz, timestamptz, smallint, uuid) to authenticated;
+grant execute on function public.submit_campaign(uuid)                to authenticated;
+grant execute on function public.admin_review_campaign(uuid, boolean, text) to authenticated;
+grant execute on function public.pause_campaign(uuid)                 to authenticated;
+grant execute on function public.resume_campaign(uuid)                to authenticated;
+
+-- ===========================================================================
+-- 19. Send-path record + advertiser aggregate reach.
+-- ===========================================================================
+create or replace function public.record_campaign_send(
+  p_campaign_id uuid, p_user_id uuid, p_channel text default 'email',
+  p_status text default 'sent', p_resend_message_id text default null,
+  p_skip_reason text default null)
+returns uuid
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_id uuid;
+  v_status text := p_status;
+  v_skip text := p_skip_reason;
+  v_region text;
+begin
+  -- admin or delivery worker (service_role) only
+  if (select auth.uid()) is not null and not public.is_admin() then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+
+  -- Defense-in-depth: a 'sent' must still be eligible at write time (races).
+  if v_status = 'sent' and not public.is_promo_eligible(p_user_id) then
+    v_status := 'skipped'; v_skip := coalesce(v_skip, 'suppressed');
+  end if;
+
+  select coalesce(l.ip_region, l.ip_country) into v_region
+  from public.user_locations l where l.user_id = p_user_id
+  order by l.captured_at desc limit 1;
+
+  insert into public.campaign_sends
+    (campaign_id, user_id, channel, status, skip_reason, region, resend_message_id,
+     sent_at)
+  values (p_campaign_id, p_user_id, p_channel, v_status, v_skip, v_region, p_resend_message_id,
+     case when v_status in ('sent','delivered') then now() end)
+  returning id into v_id;
+  return v_id;
+end;
+$$;
+
+-- Aggregate reach for the advertiser console — COUNTS ONLY, never identities.
+create or replace function public.campaign_reach(p_campaign_id uuid)
+returns table (queued int, sent int, delivered int, bounced int,
+               complained int, unsubscribed int, skipped int)
+language plpgsql stable security definer set search_path = ''
+as $$
+declare v_business uuid;
+begin
+  select business_id into v_business from public.ad_campaigns where id = p_campaign_id;
+  if v_business is null
+     or not ((select public.is_business_member(v_business)) or (select public.is_admin())) then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+  return query
+  select
+    count(*) filter (where status = 'queued')::int,
+    count(*) filter (where status = 'sent')::int,
+    count(*) filter (where status = 'delivered')::int,
+    count(*) filter (where status = 'bounced')::int,
+    count(*) filter (where status = 'complained')::int,
+    (select count(*)::int from public.email_suppressions s
+       where s.campaign_id = p_campaign_id and s.reason = 'unsubscribe'),
+    count(*) filter (where status = 'skipped')::int
+  from public.campaign_sends where campaign_id = p_campaign_id;
+end;
+$$;
+
+grant execute on function public.record_campaign_send(uuid, uuid, text, text, text, text) to authenticated, service_role;
+grant execute on function public.campaign_reach(uuid) to authenticated;
+
+-- ===========================================================================
+-- 20. Featured placement RPCs (A7) + serving read.
+-- ===========================================================================
+create or replace function public.admin_grant_featured_placement(
+  p_business_id uuid, p_bathroom_id uuid, p_surface text, p_region text,
+  p_lat double precision, p_lng double precision, p_radius_km double precision,
+  p_starts_at timestamptz, p_ends_at timestamptz, p_edition_id uuid default null)
+returns uuid
+language plpgsql security definer set search_path = ''
+as $$
+declare v_id uuid; v_geog extensions.geography(Point, 4326);
+begin
+  if not public.is_admin() then raise exception 'not authorized' using errcode = '42501'; end if;
+  if not public.can_feature(p_business_id) then
+    raise exception 'featured allowance exhausted' using errcode = '22023';
+  end if;
+  if p_lat is not null and p_lng is not null then
+    v_geog := extensions.st_setsrid(extensions.st_point(p_lng, p_lat), 4326)::extensions.geography;
+  end if;
+
+  insert into public.featured_placements
+    (business_id, bathroom_id, surface, region, region_geog, radius_km, edition_id,
+     starts_at, ends_at, status, created_by)
+  values (p_business_id, p_bathroom_id, p_surface, p_region, v_geog,
+     case when p_radius_km is not null then greatest(5, p_radius_km) end, p_edition_id,
+     p_starts_at, p_ends_at, 'active', (select auth.uid()))
+  returning id into v_id;
+
+  insert into public.moderation_actions (actor_id, action, target_type, target_id, detail)
+  values ((select auth.uid()), 'grant_featured', 'placement', v_id,
+          jsonb_build_object('business', p_business_id, 'surface', p_surface));
+  return v_id;
+end;
+$$;
+
+create or replace function public.activate_featured_from_campaign(p_campaign_id uuid)
+returns integer
+language plpgsql security definer set search_path = ''
+as $$
+declare v public.ad_campaigns; v_id uuid;
+begin
+  if not public.is_admin() then raise exception 'not authorized' using errcode = '42501'; end if;
+  select * into v from public.ad_campaigns where id = p_campaign_id;
+  if v.id is null or v.type <> 'featured' then
+    raise exception 'not a featured campaign' using errcode = '22023';
+  end if;
+  if not public.can_feature(v.business_id) then
+    raise exception 'featured allowance exhausted' using errcode = '22023';
+  end if;
+
+  insert into public.featured_placements
+    (campaign_id, business_id, bathroom_id, surface, region, region_geog, radius_km,
+     starts_at, ends_at, status, created_by)
+  values (v.id, v.business_id, (v.creative->>'bathroom_id')::uuid,
+     coalesce(v.creative->>'surface', 'browse'), v.target_region, v.target_geog, v.radius_km,
+     coalesce(v.starts_at, now()), coalesce(v.ends_at, now() + interval '7 days'),
+     'active', (select auth.uid()))
+  returning id into v_id;
+  return 1;
+end;
+$$;
+
+-- App-facing read: active placements for a surface near a coarse point/region.
+-- SECURITY INVOKER: relies on the "active placements are public" policy.
+create or replace function public.active_featured_placements(
+  p_surface text, p_region text default null,
+  p_lat double precision default null, p_lng double precision default null)
+returns setof public.featured_placements
+language sql stable set search_path = ''
+as $$
+  select f.* from public.featured_placements f
+  where f.surface = p_surface
+    and f.status = 'active'
+    and now() between f.starts_at and f.ends_at
+    and ( f.region_geog is null
+          or (p_lat is null or p_lng is null)
+          or extensions.st_dwithin(
+               f.region_geog,
+               extensions.st_setsrid(extensions.st_point(p_lng, p_lat), 4326)::extensions.geography,
+               coalesce(f.radius_km, 50) * 1000.0) )
+    and (f.region is null or p_region is null or lower(f.region) = lower(p_region))
+  order by f.priority desc, f.starts_at desc;
+$$;
+
+grant execute on function public.admin_grant_featured_placement(uuid, uuid, text, text, double precision, double precision, double precision, timestamptz, timestamptz, uuid) to authenticated;
+grant execute on function public.activate_featured_from_campaign(uuid) to authenticated;
+grant execute on function public.active_featured_placements(text, text, double precision, double precision) to anon, authenticated;
+
+-- ===========================================================================
+-- 21. Segment + plan admin RPCs (thin; A3/A9 own the logic depth).
+-- ===========================================================================
+create or replace function public.admin_create_segment(p_name text, p_predicate jsonb default '{}'::jsonb)
+returns uuid
+language plpgsql security definer set search_path = ''
+as $$
+declare v_id uuid;
+begin
+  if not public.is_admin() then raise exception 'not authorized' using errcode = '42501'; end if;
+  insert into public.user_segments (name, predicate, created_by)
+  values (p_name, coalesce(p_predicate,'{}'::jsonb), (select auth.uid())) returning id into v_id;
+  insert into public.moderation_actions (actor_id, action, target_type, target_id)
+  values ((select auth.uid()), 'create_segment', 'segment', v_id);
+  return v_id;
+end;
+$$;
+
+create or replace function public.admin_materialize_segment(p_segment_id uuid)
+returns integer
+language plpgsql security definer set search_path = ''
+as $$
+declare n integer;
+begin
+  if not public.is_admin() then raise exception 'not authorized' using errcode = '42501'; end if;
+  delete from public.segment_members where segment_id = p_segment_id;
+  insert into public.segment_members (segment_id, user_id)
+  select p_segment_id, s.user_id from public.segment_user_ids(p_segment_id) s
+  on conflict do nothing;
+  get diagnostics n = row_count;
+  update public.user_segments set is_dynamic = false, updated_at = now() where id = p_segment_id;
+  insert into public.moderation_actions (actor_id, action, target_type, target_id, detail)
+  values ((select auth.uid()), 'materialize_segment', 'segment', p_segment_id,
+          jsonb_build_object('count', n));
+  return n;
+end;
+$$;
+
+create or replace function public.admin_upsert_plan(
+  p_key text, p_name text, p_price_cents integer, p_max_locations integer,
+  p_blasts_per_month integer, p_featured_per_week integer, p_team_seats integer,
+  p_analytics_level text default 'basic', p_csv_import boolean default false,
+  p_api_access boolean default false, p_sort_order integer default 0, p_is_public boolean default true)
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+begin
+  if not public.is_admin() then raise exception 'not authorized' using errcode = '42501'; end if;
+  insert into public.plans (key, name, price_cents, max_locations, blasts_per_month,
+     featured_per_week, team_seats, analytics_level, csv_import, api_access, sort_order, is_public)
+  values (p_key, p_name, p_price_cents, p_max_locations, p_blasts_per_month,
+     p_featured_per_week, p_team_seats, p_analytics_level, p_csv_import, p_api_access, p_sort_order, p_is_public)
+  on conflict (key) do update set
+     name = excluded.name, price_cents = excluded.price_cents, max_locations = excluded.max_locations,
+     blasts_per_month = excluded.blasts_per_month, featured_per_week = excluded.featured_per_week,
+     team_seats = excluded.team_seats, analytics_level = excluded.analytics_level,
+     csv_import = excluded.csv_import, api_access = excluded.api_access,
+     sort_order = excluded.sort_order, is_public = excluded.is_public, updated_at = now();
+  insert into public.moderation_actions (actor_id, action, target_type, target_id, detail)
+  values ((select auth.uid()), 'update_plan', 'plan', gen_random_uuid(), jsonb_build_object('plan', p_key));
+end;
+$$;
+
+grant execute on function public.admin_create_segment(text, jsonb)      to authenticated;
+grant execute on function public.admin_materialize_segment(uuid)         to authenticated;
+grant execute on function public.admin_upsert_plan(text, text, integer, integer, integer, integer, integer, text, boolean, boolean, integer, boolean) to authenticated;
+
+-- ===========================================================================
+-- 22. Extend the moderation audit vocabulary. NOTE: this also REPAIRS a latent
+--     bug — 20260711000000 wrote target_type='business' but never widened the
+--     target_type CHECK, so admin_approve_access_request currently violates it.
+-- ===========================================================================
+alter table public.moderation_actions drop constraint moderation_actions_action_check;
+alter table public.moderation_actions add constraint moderation_actions_action_check
+  check (action in (
+    'soft_delete_review', 'restore_review',
+    'soft_delete_bathroom', 'restore_bathroom',
+    'resolve_report', 'dismiss_report',
+    'grant_role', 'revoke_role',
+    'update_bathroom', 'approve_access_request', 'verify_claim', 'reject_claim',
+    -- growth platform:
+    'create_campaign', 'submit_campaign', 'approve_campaign', 'reject_campaign',
+    'pause_campaign', 'resume_campaign', 'send_campaign',
+    'grant_featured', 'revoke_featured',
+    'create_segment', 'materialize_segment',
+    'suppress_email', 'unsubscribe',
+    'create_newsletter', 'send_newsletter', 'update_plan'));
+
+alter table public.moderation_actions drop constraint moderation_actions_target_type_check;
+alter table public.moderation_actions add constraint moderation_actions_target_type_check
+  check (target_type in (
+    'review', 'bathroom', 'report', 'profile',
+    'business', 'campaign', 'placement', 'segment', 'suppression',
+    'newsletter', 'user', 'plan'));
+```
+
+---
+
+## 8. `src/types/db.ts` additions (append; keep the file's hand-maintained mirror rule)
+
+```ts
+// --- Growth platform (consent, CRM, campaigns, ads, analytics) --------------
+
+export interface GrowthSetting {
+  key: string;
+  int_value: number | null;
+  text_value: string | null;
+  updated_at: string;
+  updated_by: Uuid | null;
+}
+
+export type AnalyticsLevel = 'none' | 'basic' | 'advanced';
+
+export interface Plan {
+  key: string;
+  name: string;
+  description: string | null;
+  price_cents: number;
+  billing_period: 'month' | 'year';
+  max_locations: number | null;      // null = unlimited
+  blasts_per_month: number;
+  featured_per_week: number;
+  team_seats: number | null;         // null = unlimited
+  analytics_level: AnalyticsLevel;
+  csv_import: boolean;
+  api_access: boolean;
+  sort_order: number;
+  is_public: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlanFeature {
+  plan_key: string;
+  feature: string;
+  int_value: number | null;
+  bool_value: boolean | null;
+  text_value: string | null;
+}
+
+export interface UserConsent {
+  user_id: Uuid;
+  marketing_opt_in: boolean;
+  location_opt_in: boolean;
+  gpc_detected: boolean;
+  source: string | null;
+  marketing_opt_in_at: string | null;
+  location_opt_in_at: string | null;
+  consent_updated_at: string;
+  created_at: string;
+}
+
+/** Admin-only. `geog` is a city centroid (never precise). */
+export interface UserLocation {
+  id: Uuid;
+  user_id: Uuid;
+  captured_at: string;
+  ip_city: string | null;
+  ip_region: string | null;
+  ip_country: string | null;   // ISO 3166-1 alpha-2
+  source: string | null;
+  expires_at: string;
+}
+
+export interface UserSegment {
+  id: Uuid;
+  name: string;
+  description: string | null;
+  predicate: Record<string, unknown>;
+  is_dynamic: boolean;
+  created_by: Uuid | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SegmentMember {
+  segment_id: Uuid;
+  user_id: Uuid;
+  added_at: string;
+}
+
+export type CampaignType = 'email_blast' | 'featured';
+export type CampaignStatus =
+  | 'draft' | 'pending_review' | 'approved' | 'running' | 'paused' | 'done' | 'rejected';
+
+export interface CampaignCreative {
+  subject?: string;
+  body_html?: string;
+  body_text?: string;
+  image_url?: string;
+  link_url?: string;
+  cta?: string;
+  surface?: 'map' | 'browse' | 'detail' | 'newsletter';
+  bathroom_id?: Uuid;
+}
+
+export interface AdCampaign {
+  id: Uuid;
+  business_id: Uuid;
+  type: CampaignType;
+  status: CampaignStatus;
+  target_region: string | null;
+  target_country: string | null;
+  radius_km: number | null;
+  segment_id: Uuid | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  frequency_per_week: number;
+  creative: CampaignCreative;
+  submitted_at: string | null;
+  reviewed_by: Uuid | null;
+  reviewed_at: string | null;
+  review_notes: string | null;
+  created_by: Uuid | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type SendChannel = 'email' | 'in_app' | 'newsletter';
+export type SendStatus =
+  | 'queued' | 'sent' | 'delivered' | 'bounced' | 'complained' | 'failed' | 'skipped';
+export type SkipReason = 'not_opted_in' | 'suppressed' | 'freq_cap' | 'out_of_region';
+
+/** Admin-only. Advertisers see only `CampaignReach` aggregates. */
+export interface CampaignSend {
+  id: Uuid;
+  campaign_id: Uuid;
+  user_id: Uuid | null;
+  channel: SendChannel;
+  status: SendStatus;
+  skip_reason: SkipReason | null;
+  unsubscribe_token: Uuid;
+  region: string | null;
+  resend_message_id: string | null;
+  queued_at: string;
+  sent_at: string | null;
+  updated_at: string;
+}
+
+/** Aggregate-only reach for the advertiser console (no identities). */
+export interface CampaignReach {
+  queued: number;
+  sent: number;
+  delivered: number;
+  bounced: number;
+  complained: number;
+  unsubscribed: number;
+  skipped: number;
+}
+
+export type FeaturedSurface = 'map' | 'browse' | 'detail' | 'newsletter';
+export type FeaturedStatus = 'scheduled' | 'active' | 'paused' | 'done' | 'rejected';
+
+export interface FeaturedPlacement {
+  id: Uuid;
+  campaign_id: Uuid | null;
+  business_id: Uuid;
+  bathroom_id: Uuid | null;
+  surface: FeaturedSurface;
+  region: string | null;
+  radius_km: number | null;
+  edition_id: Uuid | null;
+  priority: number;
+  starts_at: string;
+  ends_at: string;
+  status: FeaturedStatus;
+  created_by: Uuid | null;
+  created_at: string;
+}
+
+export type SuppressionReason =
+  | 'unsubscribe' | 'bounce' | 'complaint' | 'manual' | 'global_optout';
+
+export interface EmailSuppression {
+  id: Uuid;
+  email: string;
+  user_id: Uuid | null;
+  reason: SuppressionReason;
+  source: string | null;
+  campaign_id: Uuid | null;
+  created_at: string;
+}
+
+export type NewsletterStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'archived';
+
+export interface NewsletterEdition {
+  id: Uuid;
+  title: string;
+  slug: string | null;
+  status: NewsletterStatus;
+  subject: string | null;
+  body_html: string | null;
+  body_text: string | null;
+  region: string | null;
+  scheduled_at: string | null;
+  sent_at: string | null;
+  created_by: Uuid | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NewsletterSend {
+  id: Uuid;
+  edition_id: Uuid;
+  user_id: Uuid | null;
+  status: SendStatus;
+  skip_reason: SkipReason | null;
+  unsubscribe_token: Uuid;
+  resend_message_id: string | null;
+  queued_at: string;
+  sent_at: string | null;
+}
+
+export interface AnalyticsEvent {
+  id: Uuid;
+  user_id: Uuid | null;
+  session_id: string | null;
+  event: string;
+  props: Record<string, unknown>;
+  region: string | null;
+  country: string | null;
+  occurred_at: string;
+  ingested_at: string;
+}
+
+// --- Growth write payloads --------------------------------------------------
+
+export interface ConsentUpdate {
+  marketing: boolean;
+  location: boolean;
+  gpc?: boolean;
+  source?: string;
+}
+
+/** Coarse targeting an advertiser sets on a campaign. All fields optional. */
+export interface CampaignTargeting {
+  region?: string;
+  country?: string;      // ISO alpha-2
+  lat?: number;          // city centroid
+  lng?: number;
+  radius_km?: number;    // clamped to >= 5 server-side
+}
+```
+
+---
+
+## 9. Open items for other agents
+
+- **A1 COMPLIANCE** — confirm the consent↔suppression coupling in `set_consent`
+  meets GDPR withdrawal + CPRA GPC obligations; confirm `unsubscribe_by_token`
+  honoring (email suppression + `marketing_opt_in=false`) satisfies CAN-SPAM's
+  "10 business days" as *immediate*. Decide whether newsletter counts toward the
+  3/week platform cap (I currently count it via `promo_sends_last_7d`).
+- **A3 LOCATION** — owns the IP→geo resolver (GeoLite2 City in the sign-in Edge
+  Function) that calls `capture_location`, and the segment `predicate` DSL that
+  `segment_user_ids` interprets (my version handles only `country`/`region`/
+  `marketing_opt_in`). Confirm the ≥5 km radius floor.
+- **A6 EMAIL_DELIVERY** — the send loop is: `campaign_eligible_recipients` →
+  Resend (100/day, 3,000/mo free tier) → `record_campaign_send`. Resend
+  bounce/complaint webhooks write `email_suppressions` (reason `bounce`/
+  `complaint`) as `service_role`.
+- **A9 PRICING** — replace my placeholder `plans` rows via `admin_upsert_plan`;
+  the schema/caps are fixed, the numbers are yours. Keep `'standard'` present (the
+  live `subscriptions` FK references it) or migrate existing rows first.
+- **A14 ARCHITECTURE** — please surface the `moderation_actions` target_type CHECK
+  repair (§5) in the rollout notes; it fixes an existing latent constraint
+  violation on `admin_approve_access_request`.
+```

@@ -19,18 +19,18 @@ type Location = {
 
 const LOCATIONS: Location[] = [
   {
-    name: 'Bean & Bar — Tower District',
-    address: '815 E Olive Ave',
+    name: 'Golden Bear Gas — Bakersfield',
+    address: '2400 Golden State Hwy',
     status: 'Verified',
   },
   {
-    name: 'Bean & Bar — River Park',
-    address: '71 E Nees Ave',
+    name: 'Golden Bear Gas — Sacramento',
+    address: '500 Richards Blvd',
     status: 'Verified',
   },
   {
-    name: 'Bean & Bar — Downtown',
-    address: '2100 Kern St',
+    name: 'Golden Bear Gas — Barstow',
+    address: '2751 Lenwood Rd',
     status: 'Pending',
   },
 ];
@@ -56,14 +56,13 @@ export function DashboardPreview() {
                 strokeLinejoin="round"
                 className="size-5"
               >
-                <path d="M4 8h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V8Z" />
-                <path d="M17 9h1.5a2.5 2.5 0 0 1 0 5H17" />
-                <path d="M7 3.5v1.5M10.5 3.5v1.5M14 3.5v1.5" />
+                <path d="M5 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16" />
+                <path d="M3.5 21h11M6.5 7h5M15 10h2a2 2 0 0 1 2 2v5.5a1.5 1.5 0 0 0 3 0V9l-2.5-2.5" />
               </svg>
             </div>
             <div className="min-w-0">
               <h2 className="truncate text-lg font-semibold text-app">
-                Bean &amp; Bar Coffee
+                Golden Bear Gas
               </h2>
               <p className="text-xs text-muted">Your role: owner</p>
             </div>

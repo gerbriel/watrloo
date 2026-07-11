@@ -13,10 +13,10 @@ const KPIS: { label: string; value: string }[] = [
 ];
 
 const LOCATIONS: { name: string; rating: number; reviews: number }[] = [
-  { name: 'Tower District', rating: 4.8, reviews: 96 },
-  { name: 'River Park', rating: 4.6, reviews: 74 },
-  { name: 'Clovis', rating: 4.4, reviews: 58 },
-  { name: 'Downtown', rating: 4.1, reviews: 41 },
+  { name: 'Bakersfield', rating: 4.8, reviews: 96 },
+  { name: 'Sacramento', rating: 4.6, reviews: 74 },
+  { name: 'San Diego', rating: 4.4, reviews: 58 },
+  { name: 'Barstow', rating: 4.1, reviews: 41 },
 ];
 
 export function AnalyticsPreview() {
@@ -24,7 +24,7 @@ export function AnalyticsPreview() {
     <PreviewFrame title="Analytics">
       <div className="flex flex-col gap-5">
         <header>
-          <h3 className="text-base font-bold text-app">Bean &amp; Bar Coffee</h3>
+          <h3 className="text-base font-bold text-app">Golden Bear Gas</h3>
           <p className="mt-0.5 text-xs text-muted">
             Review performance across your verified listings.
           </p>

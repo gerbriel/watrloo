@@ -62,7 +62,7 @@ export function StorefrontPreview() {
         <header className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-lg font-bold text-app">
-              Bean &amp; Bar Coffee — Tower District
+              Golden Bear Gas — Bakersfield
             </h1>
             <span
               aria-label="Official listing"
@@ -87,7 +87,7 @@ export function StorefrontPreview() {
               <span>Official</span>
             </span>
           </div>
-          <p className="text-sm text-muted">805 E Olive Ave, Fresno, CA 93728</p>
+          <p className="text-sm text-muted">2400 Golden State Hwy, Bakersfield, CA 93308</p>
 
           {/* Rating row — mirrors BathroomDetail's aggregate score line. */}
           <div className="flex flex-wrap items-center gap-2">
@@ -131,8 +131,8 @@ export function StorefrontPreview() {
           </div>
 
           <p className="text-sm text-app">
-            Spotless and easy to find. Grabbed a coffee and the door code was
-            right on the receipt — quick in and out.
+            Spotless for a highway stop. Grabbed the key at the register and
+            was back on I-5 in five minutes.
           </p>
 
           {/* Official reply — mirrors OwnerResponse's nested, left-accented card. */}
@@ -156,14 +156,14 @@ export function StorefrontPreview() {
                   />
                 </svg>
                 <span className="truncate text-xs font-bold text-app">
-                  Response from Bean &amp; Bar Coffee
+                  Response from Golden Bear Gas
                 </span>
               </span>
               <span className="shrink-0 text-xs text-muted">2d ago</span>
             </div>
             <p className="mt-1 text-sm text-app">
-              Thank you, Marisol! We keep the restrooms stocked and check them
-              every hour. See you again soon.
+              Thank you, Marisol! We check the restrooms every shift and keep
+              them stocked. Safe travels — see you next trip.
             </p>
           </div>
         </article>

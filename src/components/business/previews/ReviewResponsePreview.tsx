@@ -21,8 +21,8 @@ export function ReviewResponsePreview() {
         </div>
 
         <p className="text-sm text-app">
-          Clean and easy to find, but the changing table was out of supplies on
-          Sunday.
+          Surprisingly clean for a highway stop, but the changing table was out
+          of supplies on Sunday.
         </p>
 
         {/* Official reply — mirrors OwnerResponse's nested card */}
@@ -33,13 +33,13 @@ export function ReviewResponsePreview() {
         >
           <div className="flex items-center justify-between gap-2">
             <span className="truncate text-xs font-bold text-app">
-              Response from Bean &amp; Bar Coffee
+              Response from Golden Bear Gas
             </span>
             <span className="shrink-0 text-xs text-muted">1d ago</span>
           </div>
           <p className="mt-1 text-sm text-app">
-            Thanks Marisol — we&rsquo;ve restocked and added a midday check. Come
-            say hi!
+            Thanks Marisol — we&rsquo;ve restocked and added a midday check.
+            Safe travels!
           </p>
         </div>
       </article>

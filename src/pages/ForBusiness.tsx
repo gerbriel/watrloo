@@ -149,9 +149,9 @@ function StorefrontCard() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="font-display text-lg font-semibold text-app">
-            Bean &amp; Bar Coffee
+            Golden Bear Gas
           </p>
-          <p className="text-sm text-muted">6 locations · Fresno, CA</p>
+          <p className="text-sm text-muted">42 locations · California</p>
         </div>
         <span className="inline-flex items-center gap-1 rounded-full bg-flush-600/10 px-2.5 py-1 text-xs font-medium text-flush-500 ring-1 ring-flush-500/20">
           <Icon path={ICONS.verified} className="size-3.5" />
@@ -161,9 +161,9 @@ function StorefrontCard() {
 
       <dl className="mt-5 grid grid-cols-3 gap-2 text-center">
         {[
-          ['Listings', '6'],
+          ['Listings', '42'],
           ['Avg rating', '4.6'],
-          ['Reviews', '312'],
+          ['Reviews', '1.2k'],
         ].map(([label, value]) => (
           <div key={label} className="rounded-xl bg-sunken py-2.5">
             <dt className="text-[0.7rem] uppercase tracking-wide text-muted">
@@ -181,7 +181,7 @@ function StorefrontCard() {
           <span className="flex size-7 items-center justify-center rounded-full bg-gradient-to-br from-flush-500/15 to-cyan-500/15 text-flush-500 ring-1 ring-flush-500/20">
             <Icon path={ICONS.tag} className="size-4" />
           </span>
-          <p className="text-sm font-medium text-app">Free coffee with any pastry</p>
+          <p className="text-sm font-medium text-app">Free coffee with any fill-up</p>
         </div>
         <p className="mt-2 text-xs text-muted">
           Live promotion · shown to nearby searchers

@@ -16,7 +16,7 @@ type Member = {
 const MEMBERS: Member[] = [
   { username: 'dana_owner', role: 'owner' },
   { username: 'marco_m', role: 'manager' },
-  { username: 'sam_barista', role: 'staff' },
+  { username: 'sam_cashier', role: 'staff' },
 ];
 
 export function TeamPreview() {

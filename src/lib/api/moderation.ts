@@ -82,7 +82,7 @@ export interface ModeratedReview extends Review {
 export async function listReviewsForModeration(limit = 100): Promise<ModeratedReview[]> {
   const { data, error } = await supabase
     .from('reviews')
-    .select('*, author:profiles(username), bathroom:bathrooms(id, name)')
+    .select('*, author:profiles!reviews_author_id_fkey(username), bathroom:bathrooms(id, name)')
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error) throw error;

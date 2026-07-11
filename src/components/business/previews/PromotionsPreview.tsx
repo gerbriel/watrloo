@@ -82,13 +82,13 @@ export function PromotionsPreview() {
         <div className="flex flex-col gap-3">
           <PromoCard
             icon={ICONS.tag}
-            title="Free coffee with any pastry"
+            title="Free coffee with any fill-up"
             meta="Live promotion · shown to nearby searchers"
             stat="Redeemed 143 times"
           />
           <PromoCard
             icon={ICONS.clock}
-            title="$1 off any drink — weekday mornings"
+            title="$2 off a car wash — weekday mornings"
             meta="Live promotion · shown to nearby searchers"
             stat="Redeemed 58 times"
           />

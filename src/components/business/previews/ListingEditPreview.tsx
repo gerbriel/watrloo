@@ -17,7 +17,7 @@ const AMENITIES: Amenity[] = [
   { label: 'Wheelchair accessible', checked: true },
   { label: 'Gender neutral', checked: false },
   { label: 'Changing table', checked: true },
-  { label: 'Requires a key', checked: false },
+  { label: 'Requires a key', checked: true },
 ];
 
 function CheckMark({ className }: { className: string }) {
@@ -46,7 +46,7 @@ export function ListingEditPreview() {
           <span className={LABEL}>Name</span>
           <input
             className={FIELD}
-            defaultValue={'Bean & Bar Coffee — Tower District'}
+            defaultValue={'Golden Bear Gas — Bakersfield'}
             readOnly
             aria-label="Name"
           />
@@ -56,7 +56,7 @@ export function ListingEditPreview() {
           <span className={LABEL}>Address</span>
           <input
             className={FIELD}
-            defaultValue={'815 E Olive Ave, Fresno, CA 93728'}
+            defaultValue={'2400 Golden State Hwy, Bakersfield, CA 93308'}
             readOnly
             aria-label="Address"
           />
@@ -65,9 +65,8 @@ export function ListingEditPreview() {
         <div className="flex flex-col gap-1.5">
           <span className={LABEL}>Description</span>
           <div className={cn(FIELD, 'min-h-24 text-sm leading-relaxed')}>
-            Cozy neighborhood coffee bar in the Tower District. Single-stall
-            restroom reserved for customers, kept clean and well-stocked
-            throughout the day.
+            24-hour station right off CA-99. Restrooms around the side — ask
+            the cashier for the key. Cleaned every shift and stocked daily.
           </div>
         </div>
 

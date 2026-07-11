@@ -91,9 +91,9 @@ export function ClaimPreview() {
         <div className="flex flex-col gap-3 rounded-xl border border-app bg-raised p-4">
           <div>
             <h3 className="text-base font-bold text-app">
-              Bean &amp; Bar Coffee — Tower District
+              Golden Bear Gas — Bakersfield
             </h3>
-            <p className="mt-0.5 text-xs text-muted">815 E Olive Ave, Fresno, CA</p>
+            <p className="mt-0.5 text-xs text-muted">2400 Golden State Hwy, Bakersfield, CA</p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -144,7 +144,7 @@ export function ClaimPreview() {
               )}
             >
               <span className="flex items-center gap-2">
-                <span className="font-medium">Bean &amp; Bar Coffee</span>
+                <span className="font-medium">Golden Bear Gas</span>
                 <span className="text-xs capitalize text-muted">owner</span>
               </span>
               <svg

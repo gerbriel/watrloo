@@ -6,6 +6,10 @@ import type { NewReview, Review, ReviewWithAuthor } from '@/types/db';
  * Embeds the author profile (many reviews → one profile) as an OBJECT and the
  * photos (one review → many photos) as an ARRAY in a single round-trip, matching
  * `ReviewWithAuthor`.
+ *
+ * The `!reviews_author_id_fkey` hint is required: `reviews` has TWO foreign keys
+ * to `profiles` (`author_id` and moderation's `deleted_by`), so a bare
+ * `profiles(...)` embed is ambiguous and PostgREST rejects it with PGRST201.
  */
 export async function listReviewsForBathroom(
   bathroomId: string,
@@ -13,7 +17,7 @@ export async function listReviewsForBathroom(
   const { data, error } = await supabase
     .from('reviews')
     .select(
-      '*, author:profiles(id, username, avatar_url), photos:review_photos(*)',
+      '*, author:profiles!reviews_author_id_fkey(id, username, avatar_url), photos:review_photos(*)',
     )
     .eq('bathroom_id', bathroomId)
     .order('created_at', { ascending: false });
