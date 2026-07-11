@@ -51,21 +51,36 @@ noted above.
 - Unit economics: allowance rule ≈ 278 sends per $ of subscription ≈ 77% gross
   margin. Solo $10 → 2,500 sends/mo. Never offer unlimited email below ~$50/mo.
 
-## Owner decisions still open (consolidated)
+## Owner decisions — RESOLVED (2026-07-10)
 
-1. **CAN-SPAM postal address** — legally required in every marketing email;
-   A6's sender refuses to run without it. Owner chose no postal address for the
-   consumer policy. Needs: a P.O. box, CMRA, or registered-agent address.
-   Blocks Phase 4 (email), not Phases 0–3.
-2. **Tier + allowance sign-off** — Solo $10 / Growth $39 / Chain $149 /
-   Enterprise custom, with A9's allowances (bounded by the ×278 rule).
-3. **Launch mode** — soft-launch featured placements first (no email
-   dependency, works on today's free tier, first revenue) vs waiting to launch
-   everything with email at $20/mo.
-4. **Stripe timing** — design is phase 5; manual billing (existing admin
-   approval flow) until then.
-5. **EU double opt-in** (A14's D6) — single opt-in is lawful in most of the EU;
-   double opt-in is best practice in DE/AT. Decide before EU users matter.
+1. **Channel pivot: promotional blasts are IN-APP messages, not email.**
+   The owner: "we aren't emailing notifications, we are messaging them in app."
+   Consequences, binding on all docs:
+   - `ad_campaigns.type` = `'in_app_blast' | 'featured'`. `campaign_sends.channel`
+     = `'in_app'`. A message "send" is a row the recipient reads in an in-app
+     message center (RLS: users read their own rows — delivery IS the table).
+   - CAN-SPAM (an email statute) does not apply to in-app blasts → **no postal
+     address needed for launch**. GDPR/ePrivacy direct-marketing consent still
+     applies regardless of channel — the opt-in model is unchanged.
+   - **The newsletter is ALSO in-app** (owner, same day): editions are
+     delivered through the same in-app message center, `newsletter_opt_out`
+     gates the stream. There is **no marketing email at all** — Resend remains
+     transactional-only (signup confirmation etc.). `EMAIL_DELIVERY.md` is
+     retained as reference for a hypothetical future email channel; the postal
+     address requirement is gone entirely; `email_suppressions` exists but is
+     dormant.
+   - The 3/7-days global cap and 1/7-days per-advertiser sub-cap apply to
+     in-app promotional messages exactly as designed for email.
+   - `email_suppressions` is kept (future newsletter + global kill), but in-app
+     eligibility keys on `user_consents.marketing_opt_in` + the caps.
+2. **Tiers approved as priced, with one change: NO API access on any tier.**
+   `api_access` is removed from the entitlement matrix entirely (Enterprise can
+   revisit later). Allowance economics relax for in-app (no per-send vendor
+   cost), but `max_recipients_per_blast` is retained as a blast-radius fuse.
+3. **Launch mode: GO — featured-first + in-app messaging**, Phase 0 consent
+   backbone first, on current $0 infrastructure.
+4. **Stripe: hold.** Manual billing via the existing admin approval flow.
+5. **EU double opt-in: defer** until EU users matter.
 
 ## Standing rule (unchanged)
 
