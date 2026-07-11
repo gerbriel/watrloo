@@ -104,6 +104,31 @@ list, offers backlog. The "is the machine on?" page.
 3. Integrate: reconcile, `tsc` + oxlint + build, live smoke of each new RPC
    as admin + as anon (must 403/hide), commit, deploy, verify bundle.
 
+## Managing the build from a phone
+
+Verified 2026-07-11, so expectations are accurate:
+
+- **Cloud routine (works now):** "Watrloo status check"
+  (`https://claude.ai/code/routines/trig_01VbrSrW9iPQiDaAYq1THHNj`) — open it
+  in the Claude app / claude.ai and hit Run anytime for a phone-readable
+  status: latest shipped work, deploy state, and how many of the five agent
+  workstreams are still stubs (it greps for the `AGENT UNIT` marker). Also
+  fires automatically Mondays 9am PT.
+- **Remote subagents (gated):** `isolation: "remote"` was tested and silently
+  fell back to a local worktree on this plan — the five build agents run
+  locally on the Mac, not as phone-visible cloud sessions. If cloud
+  execution unlocks later, the same launch plan applies with
+  `isolation: "remote"`.
+- **Push notifications (needs one user action):** checkpoint pushes to the
+  phone require pairing **Remote Control** in the Claude mobile app; a test
+  push reported "Remote Control inactive". Once paired, the coordinator
+  sends pushes at: spine applied, all agents landed, deploy green / failed.
+- **Steering from the phone:** claude.ai/code sessions started from the
+  phone against `gerbriel/watrloo` can read/adjust anything committed —
+  which is why the spine is committed before agents launch. Cloud sessions
+  do NOT have `.env.local`, so anything touching the live Supabase project
+  stays in the local coordinator session.
+
 ## Risks / notes
 
 - **Concurrent sessions**: another Claude session has been editing this
