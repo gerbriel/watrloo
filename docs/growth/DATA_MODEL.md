@@ -1791,4 +1791,897 @@ export interface CampaignTargeting {
 - **A14 ARCHITECTURE** — please surface the `moderation_actions` target_type CHECK
   repair (§5) in the rollout notes; it fixes an existing latent constraint
   violation on `admin_approve_access_request`.
+
+---
+
+## Reconciliation addendum (canonical resolutions)
+
+This section reconciles the cross-agent relay batches (A3–A12) against the draft
+above. **Where this addendum conflicts with an earlier section, the addendum
+wins.** Schema deltas are collected into one ordered delta migration in §R.11
+(`supabase/migrations/20260712010000_growth_reconciliation.sql`), applied after
+`20260712000000_growth_platform.sql`. Where both migrations are still unapplied,
+the orchestrator may fold the delta into the base file instead — §R.9
+(analytics partitioning) **must** be folded in pre-application.
+
+### R.1 `campaign_sends` — idempotency, retries, engagement (A5 + A6 + A4)
+
+**Conflict resolved:** A6 assumed a two-column unique `(campaign_id, user_id)`;
+A5 needs the same campaign to reach the same user more than once when
+`frequency_per_week > 1` (recurring occurrences). **Canonical uniqueness is A5's
+three-column form: `unique (campaign_id, user_id, occurrence_key)`.** A6's
+idempotent upsert must include `occurrence_key` in its conflict target;
+`occurrence_key` identifies the scheduler occurrence (e.g. `'2026-W29'` or an
+occurrence uuid rendered as text; single-shot campaigns use the default
+`'initial'`). Retrying the same occurrence is therefore idempotent, while a next
+occurrence is a new row — the weekly frequency caps (not uniqueness) bound how
+many occurrences may actually send.
+
+New columns (DDL in §R.11): `occurrence_key text not null default 'initial'`,
+`batch_id uuid` (worker batch grouping), retry machinery `attempt_count smallint
+not null default 0` + `next_attempt_at timestamptz` + `last_error text`, a new
+non-terminal status `'retrying'`, A4's **`send_token uuid`** (opaque, unique —
+used in open-pixel/click-redirect URLs so engagement tracking never exposes the
+unsubscribe capability; **distinct from `unsubscribe_token`**), and engagement
+stamps `opened_at timestamptz` / `clicked_at timestamptz` (written by A6's
+webhook handler / A4's redirect endpoint as `service_role`).
+
+Status vocabulary (canonical): non-terminal `queued`, `retrying`, `sent`;
+terminal `delivered`, `bounced`, `complained`, `failed`, `skipped`. `sent` may
+upgrade to `delivered`/`bounced`/`complained` via the Resend webhook.
+`resend_message_id` already exists in the draft (§7.7) — confirmed canonical.
+
+### R.2 k-anonymity floor — ONE number: **30**
+
+Resolves 30 (A5) vs 30 (A11) vs 100 (A10): **canonical floor = 30**, stored as
+`growth_settings.k_anonymity_floor` so it is tunable without redesign. A new
+`public.k_anonymity_floor()` helper is granted to `authenticated` so A10's UI
+"just reads it" (raw `growth_settings` stays admin-only).
+
+Enforcement: every **advertiser-facing** audience count
+(`estimate_campaign_reach`, and any A10 segment preview) returns **NULL** when
+the true count is below the floor — the UI renders "audience too small
+(< 30)". Admin surfaces (A11 CRM) see true counts; admins already hold row
+access, so a floor there protects nothing. Delivery
+(`campaign_eligible_recipients`) is not floored — it returns identities to the
+admin/service-role worker only.
+
+### R.3 Config table name
+
+**`growth_settings` is canonical.** A12's `growth_config` is the **same table**
+— read every `growth_config` reference in ABUSE_AND_LIMITS.md as
+`growth_settings`. No second table exists.
+
+### R.4 `user_consents` — full consent row (A4 + A8)
+
+Two new columns: **`analytics_opt_in boolean not null default false`** (A4's
+third toggle — gates attaching `user_id` to `analytics_events`; anonymous
+events need no consent) and **`newsletter_opt_out boolean not null default
+false`** (A8). Full canonical row: `user_id`, `marketing_opt_in`,
+`location_opt_in`, `analytics_opt_in`, `newsletter_opt_out`, `gpc_detected`,
+`source`, proof-of-consent stamps (`marketing_opt_in_at`, `location_opt_in_at`,
+`analytics_opt_in_at` — invented for parity, flag for A1), `consent_updated_at`,
+`created_at`.
+
+**Pinned semantics (keeps the opt-in-first rule):** `newsletter_opt_out` is a
+sub-preference *under* the marketing opt-in umbrella. Newsletter eligibility =
+`marketing_opt_in AND NOT newsletter_opt_out` (then suppression + weekly cap as
+usual). A default of `false` never widens the audience beyond people who
+explicitly opted into marketing. GPC forcing `marketing_opt_in = false` thereby
+kills the newsletter too. `set_consent` is re-signed to v2 (§R.11 step 2);
+`log_event` now nulls `user_id` when the caller lacks `analytics_opt_in`.
+
+### R.5 From A3 — `geo_cities` + coarse-location hygiene
+
+- New reference table **`geo_cities`** (`geoname_id integer primary key`, `city`,
+  `region`, `country char(2)`, `centroid geography(Point,4326)`, `population`)
+  — the GeoLite2/GeoNames city-centroid lookup, imported by A3's job as
+  `service_role`. Public-read (it is public reference data, no PII); GiST on
+  `centroid`.
+- `user_locations` gains **`accuracy_km double precision check (>= 5)`** (the
+  coarseness of the resolved centroid; never below the 5 km floor) and
+  **`geoname_id integer references geo_cities`** so segments can join city
+  metadata instead of string-matching `ip_city`.
+- **Confirmed: `user_locations` has NO ip/inet column** — by design, and
+  verified against §7.3. Raw IPs never touch the database; the Edge Function
+  discards them after the GeoLite2 lookup.
+
+### R.6 From A6 — webhook dedupe + daily volume
+
+- **`webhook_events`**: Resend webhooks are delivered via Svix, which retries;
+  the `svix-id` header is the dedupe key. Table: `id text primary key` (svix
+  message id), `provider`, `event_type`, `payload jsonb`, `received_at`,
+  `processed_at`. The webhook Edge Function does
+  `insert … on conflict (id) do nothing` and only processes on `found`.
+  Admin-only read; `service_role` writes.
+- **`daily_send_volume` view** (`security_invoker`): per-day/source/channel/
+  status counts across `campaign_sends` + `newsletter_sends`, for budget
+  monitoring against Resend's 100/day free tier. Effectively admin-only (the
+  underlying tables are).
+
+### R.7 From A12 — budgets, fairness, ad reporting, race-free caps
+
+- **`platform_send_counters`** (`day`, `channel`, `sent_count`, pk `(day,
+  channel)`) + **`claim_platform_send_budget(p_channel, p_requested) → int`**:
+  atomically grants up to the remaining daily budget
+  (`growth_settings.daily_email_budget`, default **100** = Resend free tier/day)
+  using a `select … for update` on the counter row; returns the granted count
+  (0 = budget exhausted, worker stops).
+- **Per-advertiser-per-user sub-cap**: at most
+  `growth_settings.advertiser_user_weekly_cap` (default **1**) message per
+  business per user per 7 days, regardless of how many campaigns that business
+  runs. New helper `business_sends_last_7d(user_id, business_id)`; gate added
+  inside `campaign_eligible_recipients` (§R.11 step 4). Order of gates is now:
+  platform 3/7d cap → advertiser 1/7d cap → per-campaign `frequency_per_week`.
+- **`claim_send_slot(p_campaign_id, p_user_id, p_occurrence_key) → boolean`**:
+  serializes concurrent delivery workers with
+  `pg_advisory_xact_lock(hashtextextended('watrloo:send:'||user_id, 0))`,
+  re-checks all three caps **counting `queued`/`retrying` claims too** (so two
+  workers can't both pass a stale count), then inserts the `queued` row
+  `on conflict do nothing`. Returns whether the slot was claimed.
+- **`featured_waitlist_credits`**: fair allocation when featured slots
+  oversubscribe. Row = a purchased/entitled credit: `business_id`, `surface`,
+  `region`, `credits`, `tier_weight` (plan-derived, modest), `requested_at`,
+  `booked_at` (set when converted), `placement_id`. Allocation order:
+  `credits desc, tier_weight desc, requested_at asc`. **Anti-monopoly cap:** one
+  advertiser may hold at most `ceil(slots/2)` concurrently active/scheduled
+  placements per (surface, region) window — `slots` from
+  `growth_settings.featured_slots_per_surface` (default 4). Enforced by
+  `featured_monopoly_ok(...)`, which `admin_grant_featured_placement` and
+  `activate_featured_from_campaign` must call (one-line `perform` guard).
+- **`reports` extended to ads**: nullable `campaign_id` and
+  `featured_placement_id` FKs; the exactly-one-target CHECK widens to sum over
+  four columns. Users can now report an ad; the existing moderation queue
+  handles it unchanged.
+
+### R.8 From A9 — entitlement matrix + plan key migration
+
+Canonical `plans` entitlement surface (typed columns unless noted):
+`max_locations`, `blasts_per_month`, **`max_recipients_per_blast`** (new column —
+the cost fuse: hard per-blast recipient ceiling, checked by A6 before queueing),
+`featured_per_week`, **`newsletter_slots_per_month`** (new column, checked by
+A8's booking RPC via `entitlement_int`), `team_seats`, `analytics_level`,
+`api_access`, `csv_import`, **`priority_support boolean`** (new),
+**`overage_enabled boolean`** (new — whether exceeding a cap is soft-blocked or
+billable later). `plan_features` EAV remains for per-business overrides of any
+of these (same keys). `entitlement_int` gains case arms for the two new int
+caps.
+
+**Adjusted, not adopted verbatim:** A9 wrote `subscriptions.plan → plans.id` and
+the names `seats`/`analytics_tier`. The pk stays **`plans.key text`** — the live
+`subscriptions.plan` column is already text, so a uuid pk would force a
+column-type migration on a live table for zero gain; wherever A9's doc says
+`plans.id`, read `plans.key`. `seats` ≡ `team_seats` and `analytics_tier` ≡
+`analytics_level` (the draft's names are already threaded through
+`entitlement_int`/`admin_upsert_plan`). **Adopted:** the bottom tier is named
+**`'solo'`**; the delta migration seeds it and runs
+`update subscriptions set plan='solo' where plan='standard'`, then removes the
+`'standard'` placeholder row.
+
+### R.9 From A4 — analytics partitioning + rollups + audit verb
+
+- **`analytics_events` is monthly range-partitioned on `occurred_at`.** This
+  **supersedes §7.10's plain table** and must be folded into the base migration
+  *before* it is applied (a plain table cannot be ALTERed into a partitioned
+  one; if §7 somehow ships first, the fallback is rename → create partitioned →
+  `insert select` → drop). PK becomes `(id, occurred_at)` (partition key must be
+  in the PK). A default partition catches strays; A4's pg_cron job creates
+  `analytics_events_YYYY_MM` ahead of time and detaches+drops expired months
+  (which also implements the 365-day retention cheaply). BRIN + the existing
+  indexes live on the parent. RLS/policies unchanged.
+- **Rollup tables** (written by A4's pg_cron job as `service_role`):
+  `analytics_daily` (day/event/region/country → users, events; admin-only) and
+  `campaign_daily` (day/campaign_id → queued/sent/delivered/opened/clicked/
+  bounced/complained/skipped; readable by the campaign's business members —
+  aggregates only, this is what powers A10's charts without touching
+  `campaign_sends`).
+- New `moderation_actions` verb **`view_user_analytics`** — logged whenever an
+  admin surface reveals a *single user's* analytics/CRM detail (§R.10).
+
+### R.10 From A11 — admin RPC surface + audit-on-reveal
+
+Signatures are canonical here; full bodies live in ADMIN_CRM.md. All are
+`SECURITY DEFINER`, `set search_path=''`, gated `is_admin()`, errcode `42501`.
+
+| RPC | Behavior |
+| --- | --- |
+| `admin_crm_search(p_query text, p_filters jsonb, p_lim int, p_off int) → table(user_id, username, email, marketing_opt_in, location_opt_in, analytics_opt_in, newsletter_opt_out, region, country, last_seen)` | List/search users joined to consent + latest coarse location. Logs ONE `crm_search` audit row per call with `detail = {query, filters}` (not one per result row). |
+| `admin_crm_user(p_user_id uuid) → jsonb` | Full dossier: consent row, location history, send history, recent events. **Audit-on-reveal rule:** every call logs `crm_view_user` (target_type `user`, target_id = the user) — individual-level PII reveals are always attributable. Analytics drill-downs on one user log `view_user_analytics` likewise. |
+| `admin_update_segment(p_segment_id, p_name, p_predicate) → void` / `admin_delete_segment(p_segment_id) → void` | Segment CRUD completing §7.21's create/materialize. Audit `update_segment`/`delete_segment`. |
+| `admin_preview_segment(p_segment_id) → int` | True member count (admin context — no k-floor; the floor is advertiser-facing, §R.2). |
+| `admin_campaign_queue() → setof ad_campaigns` | `status = 'pending_review'` ordered by `submitted_at` — the approval queue. |
+
+### R.11 Delta migration — `20260712010000_growth_reconciliation.sql`
+
+```sql
+-- Watrloo growth platform: reconciliation delta. Applies AFTER
+-- 20260712000000_growth_platform.sql. Ordered: settings -> reference tables ->
+-- column adds -> replaced functions -> new tables -> constraint widenings.
+
+-- ---------------------------------------------------------------------------
+-- 1. Settings + k-anonymity floor
+-- ---------------------------------------------------------------------------
+insert into public.growth_settings (key, int_value) values
+  ('k_anonymity_floor', 30),           -- advertiser-facing audience-count floor
+  ('advertiser_user_weekly_cap', 1),   -- msgs per business per user per 7d
+  ('daily_email_budget', 100),         -- Resend free tier: 100/day
+  ('featured_slots_per_surface', 4)    -- concurrent featured slots per surface
+on conflict (key) do nothing;
+
+create or replace function public.k_anonymity_floor()
+returns integer
+language sql stable security definer set search_path = ''
+as $$ select public.setting_int('k_anonymity_floor', 30); $$;
+grant execute on function public.k_anonymity_floor() to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 2. geo_cities (A3) + user_locations hygiene. NOTE: user_locations has NO
+--    ip/inet column — confirmed by design; raw IPs never reach the database.
+-- ---------------------------------------------------------------------------
+create table public.geo_cities (
+  geoname_id integer primary key,
+  city       text not null check (char_length(city) <= 200),
+  region     text check (char_length(region) <= 120),
+  country    text not null check (char_length(country) = 2),
+  centroid   extensions.geography(Point, 4326) not null,
+  population integer
+);
+create index geo_cities_centroid_idx on public.geo_cities using gist (centroid);
+create index geo_cities_country_region_idx on public.geo_cities (country, region);
+
+alter table public.geo_cities enable row level security;
+grant select on public.geo_cities to anon, authenticated;   -- public reference data
+create policy "geo cities are viewable by everyone"
+  on public.geo_cities for select using (true);
+-- Writes: A3's GeoLite2/GeoNames import job as service_role only.
+
+alter table public.user_locations
+  add column accuracy_km double precision check (accuracy_km is null or accuracy_km >= 5),
+  add column geoname_id integer references public.geo_cities (geoname_id) on delete set null;
+create index user_locations_geoname_idx on public.user_locations (geoname_id);
+
+-- ---------------------------------------------------------------------------
+-- 3. user_consents: analytics (A4) + newsletter sub-preference (A8);
+--    set_consent v2. Newsletter eligibility = marketing_opt_in AND NOT
+--    newsletter_opt_out — never wider than the marketing opt-in.
+-- ---------------------------------------------------------------------------
+alter table public.user_consents
+  add column analytics_opt_in    boolean not null default false,
+  add column analytics_opt_in_at timestamptz,
+  add column newsletter_opt_out  boolean not null default false;
+
+drop function public.set_consent(boolean, boolean, boolean, text);
+
+create function public.set_consent(
+  p_marketing boolean, p_location boolean,
+  p_analytics boolean default false, p_newsletter_optout boolean default false,
+  p_gpc boolean default false, p_source text default 'settings')
+returns public.user_consents
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  uid uuid := (select auth.uid());
+  v_marketing boolean := p_marketing;
+  v_email text;
+  v_row public.user_consents;
+begin
+  if uid is null then raise exception 'not authenticated' using errcode = '42501'; end if;
+  if p_gpc then v_marketing := false; end if;   -- GPC = binding opt-out (CPRA)
+
+  insert into public.user_consents as c
+    (user_id, marketing_opt_in, location_opt_in, analytics_opt_in, newsletter_opt_out,
+     gpc_detected, source, marketing_opt_in_at, location_opt_in_at, analytics_opt_in_at,
+     consent_updated_at)
+  values (uid, v_marketing, p_location, p_analytics, p_newsletter_optout, p_gpc, p_source,
+     case when v_marketing then now() end,
+     case when p_location  then now() end,
+     case when p_analytics then now() end, now())
+  on conflict (user_id) do update set
+     marketing_opt_in = excluded.marketing_opt_in,
+     location_opt_in  = excluded.location_opt_in,
+     analytics_opt_in = excluded.analytics_opt_in,
+     newsletter_opt_out = excluded.newsletter_opt_out,
+     gpc_detected     = excluded.gpc_detected,
+     source           = excluded.source,
+     marketing_opt_in_at = case when excluded.marketing_opt_in and not c.marketing_opt_in
+                                then now() else c.marketing_opt_in_at end,
+     location_opt_in_at  = case when excluded.location_opt_in and not c.location_opt_in
+                                then now() else c.location_opt_in_at end,
+     analytics_opt_in_at = case when excluded.analytics_opt_in and not c.analytics_opt_in
+                                then now() else c.analytics_opt_in_at end,
+     consent_updated_at = now()
+  returning * into v_row;
+
+  select email into v_email from auth.users where id = uid;
+  if not v_marketing then
+    insert into public.email_suppressions (email, user_id, reason, source)
+    values (lower(v_email), uid, 'global_optout', 'consent')
+    on conflict (email) do update set reason = 'global_optout', user_id = uid;
+  else
+    delete from public.email_suppressions
+     where user_id = uid and reason in ('unsubscribe','global_optout');
+  end if;
+  return v_row;
+end;
+$$;
+grant execute on function public.set_consent(boolean, boolean, boolean, boolean, boolean, text) to authenticated;
+
+-- log_event: only attach user_id with analytics consent.
+create or replace function public.log_event(
+  p_event text, p_props jsonb default '{}'::jsonb, p_session_id text default null,
+  p_region text default null, p_country text default null)
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+declare uid uuid := (select auth.uid());
+begin
+  if uid is not null and not exists (
+    select 1 from public.user_consents c where c.user_id = uid and c.analytics_opt_in
+  ) then
+    uid := null;   -- keep the event, drop the identity
+  end if;
+  insert into public.analytics_events (user_id, session_id, event, props, region, country)
+  values (uid, p_session_id, left(p_event, 80), coalesce(p_props, '{}'::jsonb),
+          p_region, upper(left(p_country, 2)));
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 4. campaign_sends: occurrence idempotency, retries, engagement (R.1).
+--    CANONICAL uniqueness: (campaign_id, user_id, occurrence_key).
+-- ---------------------------------------------------------------------------
+alter table public.campaign_sends
+  add column occurrence_key text not null default 'initial'
+             check (char_length(occurrence_key) between 1 and 60),
+  add column batch_id        uuid,
+  add column attempt_count   smallint not null default 0,
+  add column next_attempt_at timestamptz,
+  add column last_error      text,
+  add column send_token      uuid not null default gen_random_uuid(),
+  add column opened_at       timestamptz,
+  add column clicked_at      timestamptz;
+
+alter table public.campaign_sends drop constraint campaign_sends_status_check;
+alter table public.campaign_sends add constraint campaign_sends_status_check
+  check (status in ('queued','retrying','sent','delivered','bounced','complained','failed','skipped'));
+
+create unique index campaign_sends_occurrence_idx
+  on public.campaign_sends (campaign_id, user_id, occurrence_key);
+create unique index campaign_sends_send_token_idx
+  on public.campaign_sends (send_token);
+create index campaign_sends_batch_idx on public.campaign_sends (batch_id);
+create index campaign_sends_retry_idx on public.campaign_sends (next_attempt_at)
+  where status = 'retrying';
+
+-- Per-advertiser sub-cap helper (A12): msgs from ONE business to a user in 7d.
+create or replace function public.business_sends_last_7d(p_user_id uuid, p_business_id uuid)
+returns integer
+language sql stable security definer set search_path = ''
+as $$
+  select count(*)::int
+  from public.campaign_sends cs
+  join public.ad_campaigns a on a.id = cs.campaign_id
+  where cs.user_id = p_user_id and a.business_id = p_business_id
+    and cs.status in ('sent','delivered')
+    and cs.sent_at >= now() - interval '7 days';
+$$;
+grant execute on function public.business_sends_last_7d(uuid, uuid) to authenticated;
+
+-- record_campaign_send v2: occurrence-aware idempotent upsert.
+drop function public.record_campaign_send(uuid, uuid, text, text, text, text);
+
+create function public.record_campaign_send(
+  p_campaign_id uuid, p_user_id uuid, p_channel text default 'email',
+  p_status text default 'sent', p_resend_message_id text default null,
+  p_skip_reason text default null, p_occurrence_key text default 'initial',
+  p_batch_id uuid default null)
+returns uuid
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_id uuid;
+  v_status text := p_status;
+  v_skip text := p_skip_reason;
+  v_region text;
+begin
+  if (select auth.uid()) is not null and not public.is_admin() then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+  if v_status = 'sent' and not public.is_promo_eligible(p_user_id) then
+    v_status := 'skipped'; v_skip := coalesce(v_skip, 'suppressed');
+  end if;
+
+  select coalesce(l.ip_region, l.ip_country) into v_region
+  from public.user_locations l where l.user_id = p_user_id
+  order by l.captured_at desc limit 1;
+
+  insert into public.campaign_sends as cs
+    (campaign_id, user_id, occurrence_key, batch_id, channel, status, skip_reason,
+     region, resend_message_id, sent_at)
+  values (p_campaign_id, p_user_id, p_occurrence_key, p_batch_id, p_channel, v_status,
+     v_skip, v_region, p_resend_message_id,
+     case when v_status in ('sent','delivered') then now() end)
+  on conflict (campaign_id, user_id, occurrence_key) do update set
+     status = excluded.status,
+     skip_reason = excluded.skip_reason,
+     batch_id = coalesce(excluded.batch_id, cs.batch_id),
+     resend_message_id = coalesce(excluded.resend_message_id, cs.resend_message_id),
+     attempt_count = cs.attempt_count + 1,
+     sent_at = coalesce(cs.sent_at, excluded.sent_at),
+     updated_at = now()
+  returning id into v_id;
+  return v_id;
+end;
+$$;
+grant execute on function public.record_campaign_send(uuid, uuid, text, text, text, text, text, uuid) to authenticated, service_role;
+
+-- Race-free slot claim (A12): advisory-locked, counts queued claims too.
+create or replace function public.claim_send_slot(
+  p_campaign_id uuid, p_user_id uuid, p_occurrence_key text default 'initial')
+returns boolean
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  c public.ad_campaigns;
+  v_adv_cap integer := public.setting_int('advertiser_user_weekly_cap', 1);
+begin
+  if (select auth.uid()) is not null and not public.is_admin() then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+  select * into c from public.ad_campaigns where id = p_campaign_id;
+  if c.id is null then raise exception 'no such campaign' using errcode = 'P0002'; end if;
+
+  -- Serialize all cap checks for this user across concurrent workers.
+  perform pg_advisory_xact_lock(hashtextextended('watrloo:send:' || p_user_id::text, 0));
+
+  if not public.is_promo_eligible(p_user_id) then return false; end if;
+
+  -- Counts INCLUDE queued/retrying claims so parallel occurrences can't race.
+  if (select count(*) from public.campaign_sends cs
+       where cs.user_id = p_user_id
+         and cs.status in ('queued','retrying','sent','delivered')
+         and coalesce(cs.sent_at, cs.queued_at) >= now() - interval '7 days')
+     >= public.promo_weekly_cap() then return false; end if;
+
+  if (select count(*) from public.campaign_sends cs
+       join public.ad_campaigns a on a.id = cs.campaign_id
+       where cs.user_id = p_user_id and a.business_id = c.business_id
+         and cs.status in ('queued','retrying','sent','delivered')
+         and coalesce(cs.sent_at, cs.queued_at) >= now() - interval '7 days')
+     >= v_adv_cap then return false; end if;
+
+  if (select count(*) from public.campaign_sends cs
+       where cs.user_id = p_user_id and cs.campaign_id = p_campaign_id
+         and cs.status in ('queued','retrying','sent','delivered')
+         and coalesce(cs.sent_at, cs.queued_at) >= now() - interval '7 days')
+     >= c.frequency_per_week then return false; end if;
+
+  insert into public.campaign_sends (campaign_id, user_id, occurrence_key, status)
+  values (p_campaign_id, p_user_id, p_occurrence_key, 'queued')
+  on conflict (campaign_id, user_id, occurrence_key) do nothing;
+  return found;
+end;
+$$;
+grant execute on function public.claim_send_slot(uuid, uuid, text) to authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- 5. Eligibility query v2: adds the per-advertiser 1/7d sub-cap (gate order:
+--    platform cap -> advertiser cap -> per-campaign cap). Body otherwise as §7.13.
+-- ---------------------------------------------------------------------------
+create or replace function public.campaign_eligible_recipients(p_campaign_id uuid)
+returns table (user_id uuid, email text, region text)
+language plpgsql stable security definer set search_path = ''
+as $$
+declare
+  c   public.ad_campaigns;
+  cap integer := public.promo_weekly_cap();
+  adv_cap integer := public.setting_int('advertiser_user_weekly_cap', 1);
+begin
+  if (select auth.uid()) is not null and not public.is_admin() then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+  select * into c from public.ad_campaigns where id = p_campaign_id;
+  if c.id is null then raise exception 'no such campaign' using errcode = 'P0002'; end if;
+
+  return query
+  with latest_loc as (
+    select distinct on (l.user_id)
+           l.user_id, l.geog, l.ip_region, l.ip_country
+    from public.user_locations l
+    order by l.user_id, l.captured_at desc
+  ),
+  candidates as (
+    select con.user_id from public.user_consents con where con.marketing_opt_in
+  ),
+  targeted as (
+    select cand.user_id
+    from candidates cand
+    left join latest_loc ll on ll.user_id = cand.user_id
+    where
+      ( c.segment_id is null
+        or cand.user_id in (select s.user_id from public.segment_user_ids(c.segment_id) s) )
+      and
+      ( (c.target_geog is null and c.target_region is null and c.target_country is null)
+        or (c.target_geog is not null and ll.geog is not null
+             and extensions.st_dwithin(
+                   ll.geog, c.target_geog,
+                   greatest(5, least(coalesce(c.radius_km, 50), 500)) * 1000.0))
+        or (c.target_region is not null and ll.ip_region is not null
+             and lower(ll.ip_region) = lower(c.target_region))
+        or (c.target_country is not null and ll.ip_country is not null
+             and upper(ll.ip_country) = upper(c.target_country)) )
+  )
+  select t.user_id, u.email, coalesce(ll.ip_region, ll.ip_country) as region
+  from targeted t
+  join auth.users u on u.id = t.user_id
+  left join latest_loc ll on ll.user_id = t.user_id
+  where u.email is not null
+    and not exists (
+      select 1 from public.email_suppressions s
+      where s.user_id = t.user_id or lower(s.email) = lower(u.email))
+    and public.promo_sends_last_7d(t.user_id) < cap
+    and public.business_sends_last_7d(t.user_id, c.business_id) < adv_cap
+    and public.campaign_sends_last_7d(t.user_id, p_campaign_id) < c.frequency_per_week;
+end;
+$$;
+
+-- estimate_campaign_reach v2: k-anonymity floor — NULL when count < floor.
+-- (Same body as §7.13's estimator, then:)
+--   if v_count < public.k_anonymity_floor() then return null; end if;
+--   return v_count;
+-- The orchestrator applies that two-line tail change to the §7.13 body.
+
+-- ---------------------------------------------------------------------------
+-- 6. plans: full entitlement matrix (A9) + 'standard' -> 'solo' migration.
+--    PK stays plans.key (text); read A9's "plans.id" as plans.key.
+-- ---------------------------------------------------------------------------
+alter table public.plans
+  add column max_recipients_per_blast   integer check (max_recipients_per_blast is null or max_recipients_per_blast >= 1),
+  add column newsletter_slots_per_month integer not null default 0 check (newsletter_slots_per_month >= 0),
+  add column priority_support           boolean not null default false,
+  add column overage_enabled            boolean not null default false;
+
+insert into public.plans
+  (key, name, price_cents, max_locations, blasts_per_month, max_recipients_per_blast,
+   featured_per_week, newsletter_slots_per_month, team_seats, analytics_level,
+   csv_import, api_access, priority_support, overage_enabled, sort_order)
+values
+  ('solo', 'Solo', 1000, 1, 2, 500, 1, 0, 2, 'basic', false, false, false, false, 1)
+on conflict (key) do nothing;
+
+update public.subscriptions set plan = 'solo' where plan = 'standard';
+delete from public.plans where key = 'standard';
+
+create or replace function public.entitlement_int(p_business_id uuid, p_feature text)
+returns integer
+language sql stable security definer set search_path = ''
+as $$
+  select coalesce(
+    (select pf.int_value from public.plan_features pf
+       join public.subscriptions s on s.plan = pf.plan_key
+      where s.business_id = p_business_id and pf.feature = p_feature),
+    (select case p_feature
+              when 'max_locations'              then p.max_locations
+              when 'blasts_per_month'           then p.blasts_per_month
+              when 'max_recipients_per_blast'   then p.max_recipients_per_blast
+              when 'featured_per_week'          then p.featured_per_week
+              when 'newsletter_slots_per_month' then p.newsletter_slots_per_month
+              when 'team_seats'                 then p.team_seats
+            end
+       from public.plans p join public.subscriptions s on s.plan = p.key
+      where s.business_id = p_business_id));
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 7. webhook_events (Svix dedupe, A6) + daily send-volume view.
+-- ---------------------------------------------------------------------------
+create table public.webhook_events (
+  id           text primary key,          -- svix-id header (dedupe key)
+  provider     text not null default 'resend',
+  event_type   text not null check (char_length(event_type) <= 80),
+  payload      jsonb not null default '{}'::jsonb,
+  received_at  timestamptz not null default now(),
+  processed_at timestamptz
+);
+create index webhook_events_unprocessed_idx on public.webhook_events (received_at)
+  where processed_at is null;
+
+alter table public.webhook_events enable row level security;
+grant select on public.webhook_events to authenticated;
+create policy "admins read webhook events"
+  on public.webhook_events for select to authenticated
+  using ((select public.is_admin()));
+-- Writes: the webhook Edge Function as service_role, insert .. on conflict (id) do nothing.
+
+create view public.daily_send_volume
+with (security_invoker = on) as
+select coalesce(sent_at, queued_at)::date as day, 'campaign' as source,
+       channel, status, count(*)::int as sends
+from public.campaign_sends group by 1, 2, 3, 4
+union all
+select coalesce(sent_at, queued_at)::date, 'newsletter', 'email', status, count(*)::int
+from public.newsletter_sends group by 1, 2, 3, 4;
+
+-- ---------------------------------------------------------------------------
+-- 8. Platform daily send budget (A12) — atomic claim against Resend's 100/day.
+-- ---------------------------------------------------------------------------
+create table public.platform_send_counters (
+  day        date not null,
+  channel    text not null check (channel in ('email','in_app')),
+  sent_count integer not null default 0 check (sent_count >= 0),
+  primary key (day, channel)
+);
+alter table public.platform_send_counters enable row level security;
+grant select on public.platform_send_counters to authenticated;
+create policy "admins read send counters"
+  on public.platform_send_counters for select to authenticated
+  using ((select public.is_admin()));
+
+create or replace function public.claim_platform_send_budget(
+  p_channel text default 'email', p_requested integer default 1)
+returns integer
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_budget integer := public.setting_int('daily_email_budget', 100);
+  v_cur integer;
+  v_granted integer;
+begin
+  if (select auth.uid()) is not null and not public.is_admin() then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+  insert into public.platform_send_counters (day, channel)
+  values (current_date, p_channel)
+  on conflict (day, channel) do nothing;
+
+  select sent_count into v_cur from public.platform_send_counters
+   where day = current_date and channel = p_channel
+   for update;                                  -- row lock = atomic budget claim
+
+  v_granted := least(greatest(p_requested, 0), greatest(v_budget - v_cur, 0));
+  update public.platform_send_counters
+     set sent_count = v_cur + v_granted
+   where day = current_date and channel = p_channel;
+  return v_granted;                             -- 0 => budget exhausted, stop
+end;
+$$;
+grant execute on function public.claim_platform_send_budget(text, integer) to authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- 9. Featured fairness (A12): waitlist credits + anti-monopoly cap.
+-- ---------------------------------------------------------------------------
+create table public.featured_waitlist_credits (
+  id           uuid primary key default gen_random_uuid(),
+  business_id  uuid not null references public.businesses (id) on delete cascade,
+  surface      text not null check (surface in ('map','browse','detail','newsletter')),
+  region       text check (char_length(region) <= 120),
+  credits      integer not null default 1 check (credits >= 0),
+  tier_weight  numeric not null default 1.0 check (tier_weight between 0.5 and 3.0),
+  requested_at timestamptz not null default now(),
+  booked_at    timestamptz,   -- set when a credit converts into a placement
+  placement_id uuid references public.featured_placements (id) on delete set null
+);
+create index featured_waitlist_open_idx
+  on public.featured_waitlist_credits (surface, region, requested_at)
+  where booked_at is null;
+
+alter table public.featured_waitlist_credits enable row level security;
+grant select on public.featured_waitlist_credits to authenticated;
+create policy "members read their waitlist credits"
+  on public.featured_waitlist_credits for select to authenticated
+  using ((select public.is_business_member(business_id)) or (select public.is_admin()));
+-- Writes: admin RPC / service_role. Allocation order when oversubscribed:
+-- credits desc, tier_weight desc, requested_at asc.
+
+-- Anti-monopoly: one advertiser holds at most ceil(slots/2) concurrent
+-- active/scheduled placements per (surface, region) window.
+create or replace function public.featured_monopoly_ok(
+  p_business_id uuid, p_surface text, p_region text,
+  p_starts_at timestamptz, p_ends_at timestamptz)
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select (
+    select count(*) from public.featured_placements f
+    where f.business_id = p_business_id
+      and f.surface = p_surface
+      and (f.region is not distinct from p_region)
+      and f.status in ('scheduled','active')
+      and f.starts_at < p_ends_at and f.ends_at > p_starts_at
+  ) < ceil(public.setting_int('featured_slots_per_surface', 4) / 2.0);
+$$;
+grant execute on function public.featured_monopoly_ok(uuid, text, text, timestamptz, timestamptz) to authenticated;
+-- NOTE for the orchestrator: add to §7.20's admin_grant_featured_placement and
+-- activate_featured_from_campaign, right after the can_feature() guard:
+--   if not public.featured_monopoly_ok(<business>, <surface>, <region>, <starts>, <ends>)
+--   then raise exception 'advertiser slot cap reached' using errcode = '22023'; end if;
+
+-- ---------------------------------------------------------------------------
+-- 10. reports: users can report ads (A12). Widen the one-target CHECK.
+-- ---------------------------------------------------------------------------
+alter table public.reports
+  add column campaign_id uuid references public.ad_campaigns (id) on delete cascade,
+  add column featured_placement_id uuid references public.featured_placements (id) on delete cascade;
+
+-- The original inline CHECK is unnamed; Postgres named it reports_check.
+-- Verify with \d public.reports before applying if in doubt.
+alter table public.reports drop constraint reports_check;
+alter table public.reports add constraint reports_one_target_check
+  check ( (review_id is not null)::int + (bathroom_id is not null)::int
+        + (campaign_id is not null)::int + (featured_placement_id is not null)::int = 1 );
+
+-- ---------------------------------------------------------------------------
+-- 11. Analytics rollups (A4). (Partitioning of analytics_events itself is a
+--     PRE-APPLICATION amendment to §7.10 — see the DDL right after this block.)
+-- ---------------------------------------------------------------------------
+create table public.analytics_daily (
+  day     date not null,
+  event   text not null,
+  region  text not null default '',
+  country text not null default '',
+  users   integer not null default 0,
+  events  integer not null default 0,
+  primary key (day, event, region, country)
+);
+alter table public.analytics_daily enable row level security;
+grant select on public.analytics_daily to authenticated;
+create policy "admins read analytics rollups"
+  on public.analytics_daily for select to authenticated
+  using ((select public.is_admin()));
+
+create table public.campaign_daily (
+  day         date not null,
+  campaign_id uuid not null references public.ad_campaigns (id) on delete cascade,
+  queued int not null default 0, sent int not null default 0,
+  delivered int not null default 0, opened int not null default 0,
+  clicked int not null default 0, bounced int not null default 0,
+  complained int not null default 0, skipped int not null default 0,
+  primary key (day, campaign_id)
+);
+alter table public.campaign_daily enable row level security;
+grant select on public.campaign_daily to authenticated;
+-- Aggregates only — safe for the advertiser console (A10 charts read this).
+create policy "members read their campaign rollups"
+  on public.campaign_daily for select to authenticated
+  using (
+    exists (select 1 from public.ad_campaigns a
+            where a.id = campaign_id
+              and (select public.is_business_member(a.business_id)))
+    or (select public.is_admin())
+  );
+-- Writes: A4's pg_cron rollup job as service_role.
+
+-- ---------------------------------------------------------------------------
+-- 12. Moderation audit vocabulary — add the CRM/analytics reveal verbs.
+-- ---------------------------------------------------------------------------
+alter table public.moderation_actions drop constraint moderation_actions_action_check;
+alter table public.moderation_actions add constraint moderation_actions_action_check
+  check (action in (
+    'soft_delete_review', 'restore_review',
+    'soft_delete_bathroom', 'restore_bathroom',
+    'resolve_report', 'dismiss_report',
+    'grant_role', 'revoke_role',
+    'update_bathroom', 'approve_access_request', 'verify_claim', 'reject_claim',
+    'create_campaign', 'submit_campaign', 'approve_campaign', 'reject_campaign',
+    'pause_campaign', 'resume_campaign', 'send_campaign',
+    'grant_featured', 'revoke_featured',
+    'create_segment', 'materialize_segment', 'update_segment', 'delete_segment',
+    'suppress_email', 'unsubscribe',
+    'create_newsletter', 'send_newsletter', 'update_plan',
+    'view_user_analytics', 'crm_search', 'crm_view_user'));
 ```
+
+**Pre-application amendment to §7.10** (partitioned `analytics_events` —
+replaces the plain `create table` there; cannot ship as a later ALTER):
+
+```sql
+create table public.analytics_events (
+  id          uuid not null default gen_random_uuid(),
+  user_id     uuid references auth.users (id) on delete set null,
+  session_id  text check (char_length(session_id) <= 64),
+  event       text not null check (char_length(event) between 1 and 80),
+  props       jsonb not null default '{}'::jsonb,
+  region      text check (char_length(region) <= 120),
+  country     text check (char_length(country) <= 2),
+  occurred_at timestamptz not null default now(),
+  ingested_at timestamptz not null default now(),
+  primary key (id, occurred_at)               -- partition key must be in the PK
+) partition by range (occurred_at);
+
+create table public.analytics_events_default
+  partition of public.analytics_events default;
+-- A4's pg_cron job pre-creates analytics_events_YYYY_MM monthly partitions:
+--   create table public.analytics_events_2026_08 partition of public.analytics_events
+--     for values from ('2026-08-01') to ('2026-09-01');
+-- and detach+drops months older than analytics_retention_days (cheap retention).
+
+-- Indexes/RLS/policies exactly as §7.10 (they attach to the parent).
+```
+
+### R.12 Types delta (`src/types/db.ts`)
+
+```ts
+// R.1/R.4/R.5–R.9 additions — merge into the §8 block.
+export interface UserConsent {
+  // ...existing fields...
+  analytics_opt_in: boolean;
+  analytics_opt_in_at: string | null;
+  newsletter_opt_out: boolean;
+}
+export type SendStatus =
+  | 'queued' | 'retrying' | 'sent' | 'delivered'
+  | 'bounced' | 'complained' | 'failed' | 'skipped';
+export interface CampaignSend {
+  // ...existing fields...
+  occurrence_key: string;
+  batch_id: Uuid | null;
+  attempt_count: number;
+  next_attempt_at: string | null;
+  last_error: string | null;
+  send_token: Uuid;         // engagement tracking; NOT the unsubscribe token
+  opened_at: string | null;
+  clicked_at: string | null;
+}
+export interface Plan {
+  // ...existing fields...
+  max_recipients_per_blast: number | null;
+  newsletter_slots_per_month: number;
+  priority_support: boolean;
+  overage_enabled: boolean;
+}
+export interface GeoCity {
+  geoname_id: number; city: string; region: string | null;
+  country: string; population: number | null;
+}
+export interface UserLocation {
+  // ...existing fields...
+  accuracy_km: number | null;
+  geoname_id: number | null;
+}
+export interface WebhookEvent {
+  id: string; provider: string; event_type: string;
+  payload: Record<string, unknown>; received_at: string; processed_at: string | null;
+}
+export interface PlatformSendCounter { day: string; channel: 'email' | 'in_app'; sent_count: number; }
+export interface FeaturedWaitlistCredit {
+  id: Uuid; business_id: Uuid; surface: FeaturedSurface; region: string | null;
+  credits: number; tier_weight: number; requested_at: string;
+  booked_at: string | null; placement_id: Uuid | null;
+}
+export interface Report {
+  // ...existing fields...
+  campaign_id: Uuid | null;
+  featured_placement_id: Uuid | null;
+}
+export interface CampaignDaily {
+  day: string; campaign_id: Uuid; queued: number; sent: number; delivered: number;
+  opened: number; clicked: number; bounced: number; complained: number; skipped: number;
+}
+```
+
+### R.13 Rejected / adjusted requests
+
+1. **A9: `plans.id uuid` pk → ADJUSTED.** The pk stays `plans.key text`. The live
+   `subscriptions.plan` column is text; a uuid pk forces a type migration on a
+   live table for zero gain. Read A9's `plans.id` as `plans.key`. The
+   `'standard' → 'solo'` migration and the full entitlement key list are adopted.
+2. **A9: `seats` / `analytics_tier` column names → ADJUSTED** to the draft's
+   `team_seats` / `analytics_level` (identical semantics; already threaded
+   through `entitlement_int` and `admin_upsert_plan`). Alias, not a second field.
+3. **A10: k-anonymity floor of 100 → REJECTED.** Canonical is **30** (A5 and A11
+   independently chose 30; 100 makes small-city campaigns permanently preview-
+   blind). It lives in `growth_settings.k_anonymity_floor`, so raising it later
+   is a config change, not a redesign.
+4. **A6: `unique (campaign_id, user_id)` → REPLACED** by
+   `unique (campaign_id, user_id, occurrence_key)` (A5's form). A6 must add
+   `occurrence_key` to its upsert conflict target; single-shot campaigns use the
+   default `'initial'` and behave exactly as A6 assumed.
+5. **A12: `growth_config` → same table**, canonical name `growth_settings`.
+6. **A8: `newsletter_opt_out default false` → ACCEPTED with pinned semantics**:
+   it only narrows the marketing-opted-in audience
+   (`marketing_opt_in AND NOT newsletter_opt_out`); it never creates a
+   newsletter audience by default. This keeps the owner's opt-in-first decision
+   intact — flag to A1 to confirm the framing in the policy text.
+7. **A12: per-advertiser 1/7d sub-cap → ACCEPTED, made configurable**
+   (`growth_settings.advertiser_user_weekly_cap`, default 1) and enforced in
+   both `campaign_eligible_recipients` and `claim_send_slot`.
