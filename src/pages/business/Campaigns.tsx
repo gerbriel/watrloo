@@ -11,6 +11,7 @@ import type { AdCampaign } from '@/lib/api/growth';
 import { queryKeys } from '@/lib/queryClient';
 import { Button } from '@/components/ui/Button';
 import { Input, Textarea } from '@/components/ui/Field';
+import { CampaignStats } from '@/components/growth/CampaignStats';
 
 const STATUS_STYLE: Record<AdCampaign['status'], string> = {
   draft: 'text-muted',
@@ -179,6 +180,11 @@ export function Campaigns() {
             onSubmit={() => void onSubmitCampaign(c.id)}
           />
         ))}
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-semibold text-app">Performance</h2>
+        <CampaignStats businessId={businessId} />
       </section>
     </div>
   );

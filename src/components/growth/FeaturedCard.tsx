@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
-import type { FeaturedItem } from '@/lib/api/growth';
+import type { AdOfferItem } from '@/lib/api/adserving';
+import { useAdOffer } from './useAdOffer';
 
 /**
  * A paid placement in the Explore list. Clearly labeled ("Sponsored" — per the
@@ -7,9 +8,13 @@ import type { FeaturedItem } from '@/lib/api/growth';
  * adjacent to organic cards but never disguised as one, and it renders nothing
  * when there's no active placement so the layout is unaffected.
  */
-export function FeaturedCard({ item }: { item: FeaturedItem }) {
+export function FeaturedCard({ item }: { item: AdOfferItem }) {
+  const { ref, onAdClick } = useAdOffer(item.offer_id ?? null);
   const inner = (
-    <div className="card card-hover relative overflow-hidden p-4 ring-1 ring-flush-500/20">
+    <div
+      ref={ref}
+      className="card card-hover relative overflow-hidden p-4 ring-1 ring-flush-500/20"
+    >
       <span className="absolute right-3 top-3 rounded-full bg-flush-600/10 px-2 py-0.5 text-[0.65rem] font-medium uppercase tracking-wide text-flush-500 ring-1 ring-flush-500/30">
         Sponsored
       </span>
@@ -27,7 +32,11 @@ export function FeaturedCard({ item }: { item: FeaturedItem }) {
 
   if (item.bathroom_id) {
     return (
-      <Link to={`/bathrooms/${item.bathroom_id}`} aria-label={`Sponsored: ${item.business_name}`}>
+      <Link
+        to={`/bathrooms/${item.bathroom_id}`}
+        aria-label={`Sponsored: ${item.business_name}`}
+        onClick={onAdClick}
+      >
         {inner}
       </Link>
     );
@@ -39,6 +48,7 @@ export function FeaturedCard({ item }: { item: FeaturedItem }) {
         target="_blank"
         rel="noreferrer nofollow sponsored"
         aria-label={`Sponsored: ${item.business_name}`}
+        onClick={onAdClick}
       >
         {inner}
       </a>

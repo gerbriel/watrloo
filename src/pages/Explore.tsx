@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { listBathrooms } from '@/lib/api/bathrooms';
-import { activeFeatured } from '@/lib/api/growth';
+import { pickFeatured } from '@/lib/api/adserving';
 import { queryKeys } from '@/lib/queryClient';
 import { BathroomCard } from '@/components/bathroom/BathroomCard';
 import { FeaturedCard } from '@/components/growth/FeaturedCard';
@@ -42,10 +42,12 @@ export function Explore() {
     placeholderData: (previous) => previous,
   });
 
-  // Contextual sponsored slot — zero user data leaves the browser for this.
+  // Contextual sponsored slots. Selection is server-side (weighted, paced,
+  // frequency-capped); each returned item carries an offer nonce the card
+  // confirms on real viewport visibility, so impressions are honest.
   const { data: featured } = useQuery({
     queryKey: queryKeys.featured('browse'),
-    queryFn: () => activeFeatured('browse'),
+    queryFn: () => pickFeatured('browse'),
     staleTime: 5 * 60_000,
   });
 
@@ -113,9 +115,9 @@ export function Explore() {
         )}
         {bathrooms && bathrooms.length > 0 && (
           <div className="flex flex-col gap-3">
-            {featured && featured.length > 0 && (
-              <FeaturedCard item={featured[0]} />
-            )}
+            {featured?.map((item) => (
+              <FeaturedCard key={item.offer_id} item={item} />
+            ))}
             {bathrooms.map((b) => (
               <BathroomCard key={b.id} bathroom={b} />
             ))}
