@@ -19,16 +19,9 @@ export interface UserConsent {
   consent_updated_at: string;
 }
 
-export interface InAppMessage {
-  send_id: string;
-  campaign_id: string;
-  business_name: string;
-  creative: { title?: string; body?: string; link?: string };
-  status: 'queued' | 'delivered' | 'read' | 'failed';
-  created_at: string;
-  read_at: string | null;
-}
-
+// Local promos are contextual "featured" placements only. The legacy
+// in_app_blast type is retained in the union so existing DB rows type-check,
+// but the app no longer creates or delivers push messages.
 export type CampaignType = 'in_app_blast' | 'featured';
 export type CampaignStatus =
   | 'draft' | 'pending_review' | 'approved' | 'running'
@@ -92,19 +85,6 @@ export async function setConsent(patch: {
     p_gpc: gpc,
     p_source: patch.source ?? 'settings',
   });
-  if (error) throw error;
-}
-
-// --- Message center ----------------------------------------------------------
-
-export async function listMyMessages(): Promise<InAppMessage[]> {
-  const { data, error } = await supabase.rpc('my_messages');
-  if (error) throw error;
-  return (data ?? []) as InAppMessage[];
-}
-
-export async function markMessageRead(sendId: string): Promise<void> {
-  const { error } = await supabase.rpc('mark_message_read', { p_send_id: sendId });
   if (error) throw error;
 }
 

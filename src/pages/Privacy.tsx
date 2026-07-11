@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
  * app's data handling changes, update both this page and that document.
  */
 
-const EFFECTIVE_DATE = 'July 10, 2026';
+const EFFECTIVE_DATE = 'July 11, 2026';
 const CONTACT = 'hello@watrloo.com';
 
 function H2({ children }: { children: ReactNode }) {
@@ -79,10 +79,15 @@ export function Privacy() {
             (see §8).
           </>,
           <>
+            Watrloo is free and shows{' '}
+            <Strong>contextual sponsored placements</Strong> from local
+            businesses. These are chosen from the area you’re browsing — not from
+            a profile of you. We use{' '}
             <Strong>
-              We use no advertising trackers, no analytics pixels, and no cookies
+              no third-party ad trackers, no analytics or advertising cookies, and
+              no cross-site tracking
             </Strong>{' '}
-            beyond a strictly-necessary sign-in token stored in your browser (§9).
+            (§8–9).
           </>,
           <>
             <Strong>
@@ -158,6 +163,13 @@ export function Privacy() {
             connects to our service providers (below), they process technical data
             such as your IP address and standard request logs, as any web service
             does. We do not use this to track you across other websites.
+          </>,
+          <>
+            <Strong>Approximate city (only if you opt in):</Strong> if you turn on
+            “Approximate location” in your settings, we derive your city from your
+            network (IP) address so nearby sponsored placements are more relevant.
+            We keep only the city; the address itself is discarded immediately, and
+            we never collect precise GPS location or track your movements.
           </>,
         ]}
       />
@@ -253,18 +265,28 @@ export function Privacy() {
         remain in the public directory but are no longer linked to you.
       </P>
 
-      <H2>8. We do not sell or share your personal information</H2>
+      <H2>8. Advertising, and how we don’t sell or share your data</H2>
       <P>
         <Strong>
           We do not sell your personal information, and we do not share it for
           cross-context behavioral advertising
         </Strong>{' '}
         as those terms are defined under the California Consumer Privacy Act (as
-        amended by the CPRA). We have never done so, and we have no “Do Not Sell or
-        Share” process because there is nothing to opt out of. We do not build
-        advertising profiles or target ads to you anywhere. If this ever changes,
-        we will update this policy and provide any legally required choices before
-        the change takes effect.
+        amended by the CPRA). We do not build advertising profiles about you, and
+        we do not target ads based on tracking your behavior over time or across
+        other apps and sites.
+      </P>
+      <P>
+        Watrloo is free and shows <Strong>contextual sponsored placements</Strong>{' '}
+        from local businesses. These are chosen from the area you’re browsing and,
+        only if you opt in, your approximate city — never from a behavioral profile
+        of you. Advertisers pay to be shown; they do{' '}
+        <Strong>not</Strong> receive your personal information, and we do not embed
+        third-party ad networks or tracking pixels to serve them. Contextual
+        advertising of this kind is <Strong>not a “sale” or a “share”</Strong>{' '}
+        under the CPRA, so there is still nothing for you to opt out of on that
+        basis. If this ever changes, we will update this policy and provide any
+        legally required choices before the change takes effect.
       </P>
 
       <H2>9. Cookies and local storage</H2>

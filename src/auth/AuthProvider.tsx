@@ -32,9 +32,10 @@ interface AuthContextValue {
    *  must wait on this, or they'd bounce a moderator before roles arrive. */
   rolesLoading: boolean;
   /**
-   * Creates the account. When the project has email confirmation enabled
-   * Supabase returns no session, so the caller must send the user to check
-   * their inbox rather than treat them as signed in.
+   * Creates the account. Email confirmation is currently off, so Supabase
+   * returns a live session and the caller signs the user straight in. The
+   * needsEmailConfirmation flag stays in the contract so the check-your-email
+   * flow still works if confirmation is ever turned back on.
    */
   signUp: (
     email: string,
@@ -44,7 +45,6 @@ interface AuthContextValue {
       firstName?: string;
       lastName?: string;
       phone?: string;
-      marketingOptIn?: boolean;
       termsAccepted?: boolean;
     },
   ) => Promise<{ needsEmailConfirmation: boolean }>;
@@ -198,7 +198,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         firstName?: string;
         lastName?: string;
         phone?: string;
-        marketingOptIn?: boolean;
         termsAccepted?: boolean;
       },
     ) => {
@@ -215,20 +214,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         options: {
           // The signup trigger reads these into profiles / profile_private /
           // user_consents — the name and phone never land in the public profile.
+          // Marketing consent is off by default: local promos are contextual and
+          // covered by the Terms, so there's nothing to opt into at signup.
           data: {
             username,
             first_name: extras?.firstName ?? '',
             last_name: extras?.lastName ?? '',
             phone: extras?.phone ?? '',
-            marketing_opt_in: extras?.marketingOptIn ?? false,
+            marketing_opt_in: false,
             terms_accepted: extras?.termsAccepted === true ? 'true' : 'false',
           },
-          // Where the confirmation link sends them back to. BASE_URL carries the
-          // GitHub Pages '/watrloo/' prefix in prod and '/' in dev, so this
-          // resolves to the deployed origin either way. The URL must be on
+          // Fallback redirect if email confirmation is ever re-enabled. BASE_URL
+          // carries the GitHub Pages '/watrloo/' prefix in prod and '/' in dev,
+          // so this resolves to the deployed origin either way, and must be on
           // Supabase's redirect allowlist. detectSessionInUrl then reads the
           // returned session, so clicking the link lands them logged in on the app.
-          emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}browse`,
+          emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}explore`,
         },
       });
       if (error) throw error;

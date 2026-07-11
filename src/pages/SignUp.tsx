@@ -2,7 +2,7 @@ import type { FormEvent } from 'react';
 import { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
-import { Checkbox, Input } from '@/components/ui/Field';
+import { Input } from '@/components/ui/Field';
 import { useAuth } from '@/auth/AuthProvider';
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,30}$/;
@@ -37,16 +37,17 @@ export function SignUp() {
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  // Pre-checked per the owner's US-launch decision; terms is mandatory,
-  // marketing is not. (EU rollout will require marketing un-ticked by default.)
-  const [marketingOptIn, setMarketingOptIn] = useState(true);
+  // Accepting the Terms is the single required consent at signup. Local
+  // sponsored placements are contextual and disclosed in the Terms, so there's
+  // no separate marketing opt-in to collect here. Pre-checked per the owner's
+  // US-launch decision. (EU rollout will require this un-ticked by default.)
   const [termsAccepted, setTermsAccepted] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
 
   // Signed in already (and not mid email-confirmation): nothing to do here.
-  if (session && !sentTo) return <Navigate to="/browse" replace />;
+  if (session && !sentTo) return <Navigate to="/explore" replace />;
 
   if (sentTo) {
     return (
@@ -117,11 +118,13 @@ export function SignUp() {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         phone: phone.trim() || undefined,
-        marketingOptIn,
         termsAccepted,
       });
+      // Confirmation is off, so signUp returns a live session and we go straight
+      // into the app. The check-your-email branch stays as a safety net in case
+      // confirmation is ever turned back on.
       if (needsEmailConfirmation) setSentTo(email.trim());
-      else navigate('/browse', { replace: true });
+      else navigate('/explore', { replace: true });
     } catch (err) {
       setError(signUpErrorMessage(err));
     } finally {
@@ -187,12 +190,7 @@ export function SignUp() {
           required
         />
 
-        <div className="flex flex-col gap-2 rounded-lg border border-app bg-raised p-3">
-          <Checkbox
-            label="Send me offers from local businesses (in-app only, max 3 a week — you can turn this off anytime)"
-            checked={marketingOptIn}
-            onChange={(e) => setMarketingOptIn(e.target.checked)}
-          />
+        <div className="rounded-lg border border-app bg-raised p-3">
           <div className="flex items-start gap-2">
             <input
               id="terms-accept"
@@ -213,6 +211,10 @@ export function SignUp() {
               <span className="text-muted">(required)</span>
             </label>
           </div>
+          <p className="mt-2 pl-6 text-xs text-muted">
+            Watrloo is free and supported by local businesses, who can show
+            “Sponsored” placements to people browsing in their area.
+          </p>
         </div>
 
         <div role="alert" aria-live="assertive">

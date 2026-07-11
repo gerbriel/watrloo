@@ -103,15 +103,43 @@ export function Terms() {
         guarantee a response time.
       </P>
 
-      <H2>6. Businesses and sponsored content</H2>
+      <H2>6. Advertising and sponsored content</H2>
       <P>
-        Businesses can claim their listings, keep facts accurate, and respond to
-        reviews under a paid plan. Paid placements are always{' '}
-        <Strong>labeled as sponsored</Strong>. A business can never edit, remove,
-        or reorder user reviews — review integrity is not for sale. Promotional
-        messages are delivered in-app only, only to users who opted in, and are
-        frequency-capped. Business accounts are additionally governed by the
-        plan terms presented at purchase.
+        Watrloo is free to use and is supported by advertising. Local businesses
+        can buy <Strong>sponsored placements</Strong> — promotional cards shown
+        in-context to people browsing in the relevant area. By using Watrloo you
+        agree to see these placements as part of the free service.
+      </P>
+      <Bullets
+        items={[
+          <>
+            Sponsored placements are always <Strong>clearly labeled</Strong>{' '}
+            (“Sponsored”) and never disguised as ordinary listings or reviews.
+          </>,
+          <>
+            They are <Strong>contextual</Strong>, not behavioral: what you see is
+            based on the area you’re browsing and your approximate city (derived
+            from your network address, never precise GPS). We do{' '}
+            <Strong>not</Strong> build an advertising profile of you from your
+            activity, and we do not sell your personal information to advertisers.
+          </>,
+          <>
+            We do not send marketing email or push you unsolicited messages — any
+            promotional content appears in-app, in context, only.
+          </>,
+          <>
+            You can reduce tailoring anytime in your profile’s Privacy &
+            personalization settings; sponsored placements themselves are part of
+            the free service.
+          </>,
+        ]}
+      />
+      <P>
+        Businesses can also claim their listings, keep facts accurate, and
+        respond to reviews under a paid plan. A business can{' '}
+        <Strong>never edit, remove, or reorder user reviews</Strong> — review
+        integrity is not for sale. Business accounts are additionally governed by
+        the plan terms presented at purchase.
       </P>
 
       <H2>7. The service is informational — use judgment</H2>

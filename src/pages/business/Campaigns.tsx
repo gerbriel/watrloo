@@ -36,7 +36,7 @@ function CampaignRow({
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <span className="rounded bg-sunken px-1.5 py-0.5 text-[0.65rem] uppercase tracking-wide text-muted">
-            {c.type === 'in_app_blast' ? 'Message blast' : 'Featured'}
+            Sponsored
           </span>
           <span className={`text-xs font-medium capitalize ${STATUS_STYLE[c.status]}`}>
             {c.status.replace('_', ' ')}
@@ -66,7 +66,6 @@ export function Campaigns() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  const [type, setType] = useState<'in_app_blast' | 'featured'>('in_app_blast');
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [link, setLink] = useState('');
@@ -94,10 +93,10 @@ export function Campaigns() {
     try {
       await createCampaign({
         businessId,
-        type,
+        type: 'featured',
         creative: { title: title.trim(), body: body.trim(), link: link.trim() || undefined },
         region: region.trim() || undefined,
-        surface: type === 'featured' ? 'browse' : undefined,
+        surface: 'browse',
       });
       setTitle('');
       setBody('');
@@ -131,29 +130,14 @@ export function Campaigns() {
           Campaigns
         </h1>
         <p className="mt-1 text-sm text-muted">
-          Reach opted-in users near your listings with an in-app message, or buy a
-          featured placement. Every campaign is reviewed before it runs, and
-          users see at most 3 promotions a week.
+          Buy a <span className="font-semibold text-app">Sponsored placement</span>{' '}
+          shown to people browsing near your listings. Every placement is reviewed
+          before it runs and is always clearly labeled “Sponsored.”
         </p>
       </div>
 
       <section className="flex flex-col gap-4 rounded-xl border border-app bg-raised p-5">
-        <h2 className="text-sm font-semibold text-app">New campaign</h2>
-        <div className="flex gap-2">
-          {(['in_app_blast', 'featured'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setType(t)}
-              className={`rounded-lg border px-3 py-1.5 text-sm ${
-                type === t
-                  ? 'border-flush-500 bg-flush-600/10 text-app'
-                  : 'border-app text-muted hover:text-app'
-              }`}
-            >
-              {t === 'in_app_blast' ? 'Message blast' : 'Featured placement'}
-            </button>
-          ))}
-        </div>
+        <h2 className="text-sm font-semibold text-app">New sponsored placement</h2>
         <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
         <Textarea
           label="Message"
@@ -168,10 +152,10 @@ export function Campaigns() {
           onChange={(e) => setLink(e.target.value)}
         />
         <Input
-          label="Target region (optional)"
+          label="Target area (optional)"
           value={region}
           onChange={(e) => setRegion(e.target.value)}
-          hint="City or region name. Blank targets everyone opted-in."
+          hint="City or region name — shows to people browsing there. Blank shows everywhere."
         />
         {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
         <Button onClick={() => void onCreate()} loading={busy === 'create'} className="w-fit">

@@ -2,7 +2,6 @@ import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { ThemeToggle } from '@/components/layout/ThemeToggle';
 import { AdminRequestsBell } from '@/components/admin/AdminRequestsBell';
-import { MessagesBell } from '@/components/growth/MessagesBell';
 import { useAuth } from '@/auth/AuthProvider';
 import { cn } from '@/lib/cn';
 
@@ -84,7 +83,6 @@ export function Header() {
 
           {user ? (
             <div className="flex items-center gap-2">
-              <MessagesBell />
               <Link
                 to="/profile"
                 className="max-w-[10rem] truncate text-sm font-medium text-app hover:underline"

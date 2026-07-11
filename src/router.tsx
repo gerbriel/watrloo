@@ -5,7 +5,6 @@ import { RequireRole } from '@/auth/RequireRole';
 import { useAuth } from '@/auth/AuthProvider';
 import { Landing } from '@/pages/Landing';
 import { Explore } from '@/pages/Explore';
-import { MessagesPage } from '@/pages/Messages';
 import { Terms } from '@/pages/Terms';
 import { Campaigns } from '@/pages/business/Campaigns';
 import { AdminCampaigns } from '@/pages/admin/AdminCampaigns';
@@ -107,15 +106,6 @@ export const router = createBrowserRouter([
           </RequireAuth>
         ),
       },
-      {
-        path: '/messages',
-        element: (
-          <RequireAuth>
-            <MessagesPage />
-          </RequireAuth>
-        ),
-      },
-
       // --- Business (paid tier) ---------------------------------------------
       { path: '/business', element: <ForBusiness /> },
       // Public on purpose: a company can request access without a Watrloo account.
