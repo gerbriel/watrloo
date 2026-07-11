@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { AdOfferItem } from '@/lib/api/adserving';
 import { useAdOffer } from './useAdOffer';
+import { ReportButton } from '@/components/moderation/ReportButton';
 
 /**
  * A paid placement in the Explore list. Clearly labeled ("Sponsored" — per the
@@ -30,8 +31,11 @@ export function FeaturedCard({ item }: { item: AdOfferItem }) {
     </div>
   );
 
+  // The clickable ad plus a quiet report affordance below it (outside the
+  // link, so reporting never counts as an ad click).
+  let linked = inner;
   if (item.bathroom_id) {
-    return (
+    linked = (
       <Link
         to={`/bathrooms/${item.bathroom_id}`}
         aria-label={`Sponsored: ${item.business_name}`}
@@ -40,9 +44,8 @@ export function FeaturedCard({ item }: { item: AdOfferItem }) {
         {inner}
       </Link>
     );
-  }
-  if (item.creative.link) {
-    return (
+  } else if (item.creative.link) {
+    linked = (
       <a
         href={item.creative.link}
         target="_blank"
@@ -54,5 +57,11 @@ export function FeaturedCard({ item }: { item: AdOfferItem }) {
       </a>
     );
   }
-  return inner;
+
+  return (
+    <div className="flex flex-col gap-1">
+      {linked}
+      <ReportButton target={{ ad_campaign_id: item.campaign_id }} className="self-end" />
+    </div>
+  );
 }

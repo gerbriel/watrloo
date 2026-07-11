@@ -20,27 +20,60 @@ function Tab({ to, label }: { to: string; label: string }) {
   );
 }
 
+function TabGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <span className="mr-1 text-[0.65rem] font-semibold uppercase tracking-wide text-muted/70">
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
 export function AdminLayout() {
   const { isAdmin, profile } = useAuth();
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8">
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold text-app">Admin</h1>
+        <h1 className="text-2xl font-bold text-app">Control room</h1>
         <p className="text-sm text-muted">
-          Signed in as @{profile?.username ?? '…'}. Every removal, restore, and
-          role change here is written to the audit log.
+          Signed in as @{profile?.username ?? '…'}. Every removal, restore,
+          setting change, and role change here is written to the audit log.
         </p>
       </header>
 
-      <nav className="flex gap-1 overflow-x-auto border-b border-app" aria-label="Admin sections">
-        <Tab to="/admin/reports" label="Reports" />
-        <Tab to="/admin/reviews" label="Reviews" />
-        <Tab to="/admin/bathrooms" label="Bathrooms" />
-        {isAdmin && <Tab to="/admin/campaigns" label="Campaigns" />}
-        {isAdmin && <Tab to="/admin/requests" label="Business requests" />}
-        {isAdmin && <Tab to="/admin/claims" label="Claims" />}
-        {isAdmin && <Tab to="/admin/roles" label="Roles" />}
+      <nav
+        className="flex gap-5 overflow-x-auto border-b border-app pb-px"
+        aria-label="Admin sections"
+      >
+        <TabGroup label="Moderation">
+          <Tab to="/admin/reports" label="Reports" />
+          <Tab to="/admin/reviews" label="Reviews" />
+          <Tab to="/admin/bathrooms" label="Bathrooms" />
+        </TabGroup>
+        {isAdmin && (
+          <TabGroup label="Business">
+            <Tab to="/admin/requests" label="Requests" />
+            <Tab to="/admin/claims" label="Claims" />
+            <Tab to="/admin/campaigns" label="Campaigns" />
+          </TabGroup>
+        )}
+        {isAdmin && (
+          <TabGroup label="Ads">
+            <Tab to="/admin/ads" label="Overview" />
+            <Tab to="/admin/delivery" label="Delivery" />
+            <Tab to="/admin/trust" label="Trust" />
+          </TabGroup>
+        )}
+        {isAdmin && (
+          <TabGroup label="System">
+            <Tab to="/admin/audit" label="Audit" />
+            <Tab to="/admin/ops" label="Ops" />
+            <Tab to="/admin/roles" label="Roles" />
+          </TabGroup>
+        )}
       </nav>
 
       <Outlet />

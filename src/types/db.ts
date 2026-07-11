@@ -125,6 +125,7 @@ export interface Report {
   reporter_id: Uuid | null;
   review_id: Uuid | null;
   bathroom_id: Uuid | null;
+  ad_campaign_id: Uuid | null;
   reason: string;
   status: ReportStatus;
   resolved_by: Uuid | null;
@@ -141,6 +142,12 @@ export interface ReportWithTarget extends Report {
       })
     | null;
   bathroom: Pick<Bathroom, 'id' | 'name' | 'address' | 'deleted_at'> | null;
+  ad_campaign: {
+    id: Uuid;
+    creative: { title?: string; body?: string };
+    status: string;
+    business: { name: string } | null;
+  } | null;
 }
 
 // --- Write payloads --------------------------------------------------------
@@ -159,6 +166,7 @@ export type NewReview = Pick<
 export interface NewReport {
   review_id?: Uuid;
   bathroom_id?: Uuid;
+  ad_campaign_id?: Uuid;
   reason: string;
 }
 

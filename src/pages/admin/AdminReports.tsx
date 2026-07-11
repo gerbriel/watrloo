@@ -49,6 +49,28 @@ function Target({ report }: { report: ReportWithTarget }) {
       </div>
     );
   }
+  if (report.ad_campaign) {
+    return (
+      <div className="rounded-lg border border-app bg-sunken p-3">
+        <p className="text-xs font-medium text-muted">
+          Sponsored ad by {report.ad_campaign.business?.name ?? 'unknown business'} ·{' '}
+          {report.ad_campaign.status}
+        </p>
+        <p className="mt-1 text-sm font-medium text-app">
+          {report.ad_campaign.creative.title ?? '(untitled)'}
+        </p>
+        {report.ad_campaign.creative.body && (
+          <p className="line-clamp-2 text-xs text-muted">{report.ad_campaign.creative.body}</p>
+        )}
+        <Link
+          to="/admin/campaigns"
+          className="mt-1 inline-block text-xs font-medium text-flush-600 hover:underline"
+        >
+          Open campaign review →
+        </Link>
+      </div>
+    );
+  }
   return <p className="text-sm text-muted">Target no longer exists.</p>;
 }
 

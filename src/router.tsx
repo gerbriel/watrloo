@@ -23,6 +23,11 @@ import { AdminBathrooms } from '@/pages/admin/AdminBathrooms';
 import { AdminRoles } from '@/pages/admin/AdminRoles';
 import { AdminAccessRequests } from '@/pages/admin/AdminAccessRequests';
 import { AdminClaims } from '@/pages/admin/AdminClaims';
+import { AdminAdsOverview } from '@/pages/admin/AdminAdsOverview';
+import { AdminDelivery } from '@/pages/admin/AdminDelivery';
+import { AdminTrust } from '@/pages/admin/AdminTrust';
+import { AdminAudit } from '@/pages/admin/AdminAudit';
+import { AdminOps } from '@/pages/admin/AdminOps';
 import { ForBusiness } from '@/pages/ForBusiness';
 import { RequestAccess } from '@/pages/RequestAccess';
 import { BusinessDashboard } from '@/pages/business/BusinessDashboard';
@@ -179,6 +184,46 @@ export const router = createBrowserRouter([
           { path: 'reviews', element: <AdminReviews /> },
           { path: 'bathrooms', element: <AdminBathrooms /> },
           { path: 'campaigns', element: <AdminCampaigns /> },
+          {
+            path: 'ads',
+            element: (
+              <RequireRole role="admin">
+                <AdminAdsOverview />
+              </RequireRole>
+            ),
+          },
+          {
+            path: 'delivery',
+            element: (
+              <RequireRole role="admin">
+                <AdminDelivery />
+              </RequireRole>
+            ),
+          },
+          {
+            path: 'trust',
+            element: (
+              <RequireRole role="admin">
+                <AdminTrust />
+              </RequireRole>
+            ),
+          },
+          {
+            path: 'audit',
+            element: (
+              <RequireRole role="admin">
+                <AdminAudit />
+              </RequireRole>
+            ),
+          },
+          {
+            path: 'ops',
+            element: (
+              <RequireRole role="admin">
+                <AdminOps />
+              </RequireRole>
+            ),
+          },
           {
             path: 'requests',
             element: (

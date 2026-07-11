@@ -31,7 +31,8 @@ export async function listReports(
       `*,
        reporter:profiles!reports_reporter_id_fkey(username),
        review:reviews(id, body, rating, bathroom_id, deleted_at, author:profiles!reviews_author_id_fkey(username)),
-       bathroom:bathrooms(id, name, address, deleted_at)`,
+       bathroom:bathrooms(id, name, address, deleted_at),
+       ad_campaign:ad_campaigns(id, creative, status, business:businesses(name))`,
     )
     .eq('status', status)
     .order('created_at', { ascending: false });

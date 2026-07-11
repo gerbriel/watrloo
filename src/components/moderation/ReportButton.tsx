@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Textarea } from '@/components/ui/Field';
 import { cn } from '@/lib/cn';
 
-type Target = { review_id: string } | { bathroom_id: string };
+type Target = { review_id: string } | { bathroom_id: string } | { ad_campaign_id: string };
 
 /**
  * A quiet "Report" affordance that expands into a reason box. Anyone can post
