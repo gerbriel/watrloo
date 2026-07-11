@@ -43,6 +43,10 @@ interface AuthContextValue {
   ) => Promise<{ needsEmailConfirmation: boolean }>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Emails a password-reset link that lands on /reset-password. */
+  resetPassword: (email: string) => Promise<void>;
+  /** Sets a new password for the current session (normal or recovery). */
+  updatePassword: (newPassword: string) => Promise<void>;
   /** Re-reads the profile row (e.g. after the user renames themselves). */
   refreshProfile: () => Promise<void>;
 }
@@ -216,6 +220,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   }, []);
 
+  const resetPassword = useCallback(async (email: string) => {
+    // Same BASE_URL treatment as emailRedirectTo above: '/watrloo/' on Pages,
+    // '/' in dev. The URL must be on Supabase's redirect allowlist. Clicking
+    // the link opens /reset-password with a recovery session already attached
+    // (detectSessionInUrl), where updatePassword() completes the flow.
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}${import.meta.env.BASE_URL}reset-password`,
+    });
+    if (error) throw error;
+  }, []);
+
+  const updatePassword = useCallback(async (newPassword: string) => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) throw error;
+  }, []);
+
   const isAdmin = roles.includes('admin');
   const isModerator = isAdmin || roles.includes('moderator');
   const isBusinessMember = businessMemberships.length > 0;
@@ -235,6 +255,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signUp,
       signIn,
       signOut,
+      resetPassword,
+      updatePassword,
       refreshProfile,
     }),
     [
@@ -251,6 +273,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signUp,
       signIn,
       signOut,
+      resetPassword,
+      updatePassword,
       refreshProfile,
     ],
   );

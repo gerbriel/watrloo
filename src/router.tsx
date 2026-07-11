@@ -9,6 +9,8 @@ import { NewBathroomPage } from '@/pages/NewBathroom';
 import { BathroomDetail } from '@/pages/BathroomDetail';
 import { SignIn } from '@/pages/SignIn';
 import { SignUp } from '@/pages/SignUp';
+import { ForgotPassword } from '@/pages/ForgotPassword';
+import { ResetPassword } from '@/pages/ResetPassword';
 import { ProfilePage } from '@/pages/Profile';
 import { Privacy } from '@/pages/Privacy';
 import { AdminLayout } from '@/pages/admin/AdminLayout';
@@ -63,6 +65,10 @@ export const router = createBrowserRouter([
       { path: '/bathrooms/:id', element: <BathroomDetail /> },
       { path: '/signin', element: <SignIn /> },
       { path: '/signup', element: <SignUp /> },
+      { path: '/forgot-password', element: <ForgotPassword /> },
+      // Public: the recovery token in the URL is what authorizes this page,
+      // not a normal login — RequireAuth would bounce it before it resolves.
+      { path: '/reset-password', element: <ResetPassword /> },
       { path: '/privacy', element: <Privacy /> },
       {
         path: '/profile',

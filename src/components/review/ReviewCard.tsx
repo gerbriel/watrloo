@@ -4,6 +4,7 @@ import { publicPhotoUrl } from '@/lib/api/photos';
 import { Button } from '@/components/ui/Button';
 import { ReportButton } from '@/components/moderation/ReportButton';
 import { OwnerResponse } from '@/components/business/OwnerResponse';
+import { RankBadge } from '@/components/review/RankBadge';
 
 function timeAgo(iso: string): string {
   const then = new Date(iso).getTime();
@@ -46,8 +47,9 @@ export function ReviewCard({
   return (
     <article className="flex flex-col gap-3 rounded-xl border border-app bg-raised p-4">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium text-app">@{review.author.username}</span>
+          <RankBadge reviewCount={review.author.review_count} />
           {isOwn && (
             <span className="rounded-full bg-flush-600/10 px-2 py-0.5 text-xs font-medium text-flush-600">
               Your review

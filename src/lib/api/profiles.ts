@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { STORAGE_BUCKET } from '@/types/db';
-import type { Profile } from '@/types/db';
+import type { Profile, ReviewerStats } from '@/types/db';
 
 export async function getProfile(id: string): Promise<Profile | null> {
   const { data, error } = await supabase
@@ -10,6 +10,23 @@ export async function getProfile(id: string): Promise<Profile | null> {
     .maybeSingle();
   if (error) throw error;
   return (data as Profile | null) ?? null;
+}
+
+/**
+ * A profile's live review count, which is its rank in the Grande Armée du
+ * Trône (src/lib/ranks.ts). `maybeSingle` because a brand-new profile can race
+ * the view; zero campaigns is the honest answer either way.
+ */
+export async function getReviewerStats(profileId: string): Promise<ReviewerStats> {
+  const { data, error } = await supabase
+    .from('reviewer_stats')
+    .select('*')
+    .eq('profile_id', profileId)
+    .maybeSingle();
+  if (error) throw error;
+  return (
+    (data as ReviewerStats | null) ?? { profile_id: profileId, review_count: 0 }
+  );
 }
 
 /** Look up a profile by exact username. Used by the admin role-granting form. */

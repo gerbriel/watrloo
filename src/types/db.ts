@@ -89,9 +89,20 @@ export interface ReviewPhoto {
   created_at: string;
 }
 
-/** A review with its author and photos resolved, as the detail page needs it. */
+/** Live-review count per profile, from the `reviewer_stats` view. Feeds the
+ *  reviewer rank ladder in src/lib/ranks.ts. */
+export interface ReviewerStats {
+  profile_id: Uuid;
+  review_count: number;
+}
+
+/** A review with its author and photos resolved, as the detail page needs it.
+ *  `review_count` is the author's total live reviews (their rank), merged in
+ *  from `reviewer_stats` by the API. */
 export interface ReviewWithAuthor extends Review {
-  author: Pick<Profile, 'id' | 'username' | 'avatar_url'>;
+  author: Pick<Profile, 'id' | 'username' | 'avatar_url'> & {
+    review_count: number;
+  };
   photos: ReviewPhoto[];
 }
 

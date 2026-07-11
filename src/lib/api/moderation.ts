@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
-import type { AppRole, Bathroom, Profile, Review } from '@/types/db';
+import { STORAGE_BUCKET } from '@/types/db';
+import type { AppRole, Bathroom, Profile, Review, ReviewPhoto } from '@/types/db';
 
 /**
  * All of these are thin wrappers over SECURITY DEFINER RPCs. The RPC re-checks
@@ -33,6 +34,30 @@ export async function softDeleteBathroom(bathroomId: string, reason?: string): P
 export async function restoreBathroom(bathroomId: string): Promise<void> {
   const { error } = await supabase.rpc('moderate_restore_bathroom', {
     p_bathroom_id: bathroomId,
+  });
+  if (error) throw error;
+}
+
+/**
+ * Permanently remove one photo from someone else's review (explicit content).
+ * Not a soft delete — the point is to destroy the bytes, so there is no
+ * restore. Objects first (a moderator storage policy reaches any folder in the
+ * bucket), then the RPC drops the row and writes the audit record. A retry
+ * re-runs both halves safely: removing a missing object is a no-op and the
+ * RPC skips the audit row when the photo is already gone.
+ */
+export async function moderatorDeleteReviewPhoto(
+  photo: Pick<ReviewPhoto, 'id' | 'storage_path'>,
+  reason?: string,
+): Promise<void> {
+  const { error: storageError } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .remove([photo.storage_path]);
+  if (storageError) throw storageError;
+
+  const { error } = await supabase.rpc('moderate_delete_review_photo', {
+    p_photo_id: photo.id,
+    p_reason: reason ?? null,
   });
   if (error) throw error;
 }
@@ -77,12 +102,15 @@ export async function revokeRole(userId: string, role: AppRole): Promise<void> {
 export interface ModeratedReview extends Review {
   author: Pick<Profile, 'username'> | null;
   bathroom: Pick<Bathroom, 'id' | 'name'> | null;
+  photos: ReviewPhoto[];
 }
 
 export async function listReviewsForModeration(limit = 100): Promise<ModeratedReview[]> {
   const { data, error } = await supabase
     .from('reviews')
-    .select('*, author:profiles!reviews_author_id_fkey(username), bathroom:bathrooms(id, name)')
+    .select(
+      '*, author:profiles!reviews_author_id_fkey(username), bathroom:bathrooms(id, name), photos:review_photos(*)',
+    )
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error) throw error;

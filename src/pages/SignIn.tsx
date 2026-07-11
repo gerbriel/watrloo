@@ -93,6 +93,14 @@ export function SignIn() {
           Create an account
         </Link>
       </p>
+      <p className="mt-1 text-sm text-muted">
+        <Link
+          to="/forgot-password"
+          className="font-medium text-flush-500 hover:underline"
+        >
+          Forgot your password?
+        </Link>
+      </p>
     </div>
   );
 }

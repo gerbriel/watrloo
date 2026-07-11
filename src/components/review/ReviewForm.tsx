@@ -1,11 +1,50 @@
 import { useEffect, useState } from 'react';
 import type { NewReview, Score } from '@/types/db';
 import { getMyReview, upsertReview } from '@/lib/api/reviews';
+import { getReviewerStats } from '@/lib/api/profiles';
 import { uploadReviewPhoto } from '@/lib/api/photos';
+import type { Rank } from '@/lib/ranks';
+import { campaigns, nextRankFor, rankFor, RANKS_TAGLINE } from '@/lib/ranks';
 import { StarInput } from '@/components/ui/Stars';
 import { Textarea } from '@/components/ui/Field';
 import { Button } from '@/components/ui/Button';
 import { PhotoUploader } from '@/components/review/PhotoUploader';
+
+type Celebration =
+  | { kind: 'promoted'; rank: Rank; count: number }
+  | { kind: 'logged'; count: number };
+
+/**
+ * The payoff for contributing: a fresh review is a "campaign" in the Grande
+ * Armée du Trône (src/lib/ranks.ts), and crossing a rank threshold gets a
+ * promotion banner. Rendered inside the form, right where the user just acted.
+ */
+function CampaignBanner({ celebration }: { celebration: Celebration }) {
+  if (celebration.kind === 'promoted') {
+    return (
+      <div className="rounded-lg border border-star/40 bg-star/10 p-3">
+        <p className="font-display font-bold text-app">
+          <span aria-hidden="true">⚜ </span>Promoted! You are now{' '}
+          {celebration.rank.title}.
+        </p>
+        <p className="mt-0.5 text-sm text-muted italic">
+          “{celebration.rank.motto}”
+        </p>
+      </div>
+    );
+  }
+
+  const next = nextRankFor(celebration.count);
+  return (
+    <div className="rounded-lg border border-flush-500/30 bg-flush-600/10 p-3">
+      <p className="text-sm font-medium text-app">
+        Campaign logged — {campaigns(celebration.count)} served.
+        {next && ` ${next.min - celebration.count} more to make ${next.title}.`}
+      </p>
+      <p className="mt-0.5 text-xs text-muted">{RANKS_TAGLINE}</p>
+    </div>
+  );
+}
 
 function SubRating({
   label,
@@ -48,6 +87,24 @@ export function ReviewForm({
   const [photos, setPhotos] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Campaign count at mount, so a save knows whether it earned a promotion.
+  const [myCount, setMyCount] = useState<number | null>(null);
+  const [celebration, setCelebration] = useState<Celebration | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    getReviewerStats(userId)
+      .then((s) => {
+        if (active) setMyCount(s.review_count);
+      })
+      .catch(() => {
+        /* Non-fatal: the review still saves; only the fanfare is lost. */
+      });
+    return () => {
+      active = false;
+    };
+  }, [userId]);
 
   useEffect(() => {
     let active = true;
@@ -97,6 +154,26 @@ export function ReviewForm({
       }
       setPhotos([]);
       setEditing(true);
+
+      // Refetch the count rather than assuming +1: an edit upserts in place
+      // (count unchanged, stay quiet), and only a genuinely new campaign
+      // should trigger the fanfare or a promotion.
+      if (myCount != null) {
+        try {
+          const { review_count: newCount } = await getReviewerStats(userId);
+          if (newCount > myCount) {
+            setCelebration(
+              rankFor(newCount).min !== rankFor(myCount).min
+                ? { kind: 'promoted', rank: rankFor(newCount), count: newCount }
+                : { kind: 'logged', count: newCount },
+            );
+          }
+          setMyCount(newCount);
+        } catch {
+          /* Non-fatal: the review saved; only the fanfare is lost. */
+        }
+      }
+
       onSaved();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not save your review.');
@@ -116,6 +193,12 @@ export function ReviewForm({
       onSubmit={handleSubmit}
       className="flex flex-col gap-4 rounded-xl border border-app bg-raised p-4"
     >
+      {celebration && (
+        <div role="status" aria-live="polite">
+          <CampaignBanner celebration={celebration} />
+        </div>
+      )}
+
       <h3 className="font-semibold text-app">
         {editing ? 'Update your review' : 'Write a review'}
       </h3>

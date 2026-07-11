@@ -1,6 +1,33 @@
 import { supabase } from '@/lib/supabase';
 import { STORAGE_BUCKET } from '@/types/db';
-import type { NewReview, Review, ReviewWithAuthor } from '@/types/db';
+import type { NewReview, Review, ReviewerStats, ReviewWithAuthor } from '@/types/db';
+
+/**
+ * `reviewer_stats` is a VIEW with no foreign key PostgREST can embed through
+ * (same story as `bathroom_stats`), so the authors' live review counts — which
+ * drive the rank badge on each card — arrive in a second query, merged in JS.
+ */
+async function attachAuthorCounts(
+  rows: ReviewWithAuthor[],
+): Promise<ReviewWithAuthor[]> {
+  if (rows.length === 0) return rows;
+  const authorIds = [...new Set(rows.map((r) => r.author.id))];
+  const { data, error } = await supabase
+    .from('reviewer_stats')
+    .select('*')
+    .in('profile_id', authorIds);
+  if (error) throw error;
+
+  const counts = new Map(
+    ((data ?? []) as ReviewerStats[]).map((s) => [s.profile_id, s.review_count]),
+  );
+  // The view emits a row per profile, so a miss shouldn't happen — but an
+  // author visible here has at least the review we're rendering.
+  return rows.map((r) => ({
+    ...r,
+    author: { ...r.author, review_count: counts.get(r.author.id) ?? 1 },
+  }));
+}
 
 /**
  * Embeds the author profile (many reviews → one profile) as an OBJECT and the
@@ -22,7 +49,7 @@ export async function listReviewsForBathroom(
     .eq('bathroom_id', bathroomId)
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []) as unknown as ReviewWithAuthor[];
+  return attachAuthorCounts((data ?? []) as unknown as ReviewWithAuthor[]);
 }
 
 export async function getMyReview(

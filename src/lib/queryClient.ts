@@ -32,6 +32,7 @@ export const queryKeys = {
   myReview: (bathroomId: string, userId: string) =>
     ['review', bathroomId, userId] as const,
   myRoles: (userId: string) => ['roles', userId] as const,
+  reviewerStats: (profileId: string) => ['reviewerStats', profileId] as const,
   reports: (status: string) => ['reports', status] as const,
   adminReviews: () => ['admin', 'reviews'] as const,
   adminBathrooms: () => ['admin', 'bathrooms'] as const,

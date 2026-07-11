@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/Field';
 import { useAuth } from '@/auth/AuthProvider';
 import { supabase } from '@/lib/supabase';
 import { deleteMyAccount } from '@/lib/api/profiles';
+import { ServiceRecord } from '@/components/review/ServiceRecord';
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,30}$/;
 
@@ -118,6 +119,10 @@ export function ProfilePage() {
   return (
     <div className="mx-auto max-w-lg py-8">
       <h1 className="text-2xl font-bold text-app">Your profile</h1>
+
+      <div className="mt-6">
+        <ServiceRecord profileId={userId} />
+      </div>
 
       <dl className="mt-6 overflow-hidden rounded-xl border border-app bg-raised">
         <Row label="Username">

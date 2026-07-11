@@ -1,10 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+import type { ReviewPhoto } from '@/types/db';
 import {
   listReviewsForModeration,
+  moderatorDeleteReviewPhoto,
   restoreReview,
   softDeleteReview,
 } from '@/lib/api/moderation';
+import { publicPhotoUrl } from '@/lib/api/photos';
 import { queryKeys } from '@/lib/queryClient';
 import { Button } from '@/components/ui/Button';
 
@@ -31,6 +34,11 @@ export function AdminReviews() {
   });
   const restore = useMutation({
     mutationFn: (id: string) => restoreReview(id),
+    onSuccess: invalidate,
+  });
+  // Destroys the bytes; there is no restore. Hence the confirm below.
+  const removePhoto = useMutation({
+    mutationFn: (photo: ReviewPhoto) => moderatorDeleteReviewPhoto(photo),
     onSuccess: invalidate,
   });
 
@@ -83,6 +91,50 @@ export function AdminReviews() {
 
             {r.body && (
               <p className="line-clamp-3 whitespace-pre-line text-sm text-app">{r.body}</p>
+            )}
+
+            {r.photos.length > 0 && (
+              <ul className="flex flex-wrap gap-2 pt-1">
+                {r.photos.map((photo) => {
+                  const deletingPhoto =
+                    removePhoto.isPending && removePhoto.variables?.id === photo.id;
+                  return (
+                    <li key={photo.id} className="relative">
+                      <a
+                        href={publicPhotoUrl(photo.storage_path)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block size-20 overflow-hidden rounded-lg border border-app"
+                      >
+                        <img
+                          src={publicPhotoUrl(photo.storage_path)}
+                          alt={`Photo on @${r.author?.username ?? 'unknown'}’s review`}
+                          loading="lazy"
+                          className="size-full object-cover"
+                        />
+                      </a>
+                      <button
+                        type="button"
+                        aria-label="Permanently delete this photo"
+                        title="Permanently delete this photo"
+                        disabled={removePhoto.isPending}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              'Permanently delete this photo? The image file is destroyed — this cannot be undone.',
+                            )
+                          ) {
+                            removePhoto.mutate(photo);
+                          }
+                        }}
+                        className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white shadow hover:bg-red-600 disabled:opacity-50"
+                      >
+                        {deletingPhoto ? '…' : '×'}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
 
             <div className="flex justify-end">
