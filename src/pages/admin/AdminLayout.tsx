@@ -52,6 +52,8 @@ export function AdminLayout() {
           <Tab to="/admin/reports" label="Reports" />
           <Tab to="/admin/reviews" label="Reviews" />
           <Tab to="/admin/bathrooms" label="Bathrooms" />
+          {isAdmin && <Tab to="/admin/appeals" label="Appeals" />}
+          {isAdmin && <Tab to="/admin/attributes" label="Attributes" />}
         </TabGroup>
         {isAdmin && (
           <TabGroup label="Business">
