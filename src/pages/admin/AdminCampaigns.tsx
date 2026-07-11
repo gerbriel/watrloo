@@ -57,8 +57,8 @@ export function AdminCampaigns() {
                 {c.business?.name ?? 'Unknown business'}
               </p>
               <p className="text-xs text-muted">
-                {c.type === 'in_app_blast' ? 'Message blast' : 'Featured placement'}
-                {c.target_region ? ` · ${c.target_region}` : ' · all regions'}
+                {c.type === 'in_app_blast' ? 'Message (legacy)' : 'Sponsored placement'}
+                {c.target_region ? ` · ${c.target_region}` : ' · all areas'}
               </p>
             </div>
           </div>
