@@ -106,6 +106,12 @@ export function Privacy() {
             authentication provider; we never see or store it in plaintext.
           </>,
           <>
+            <Strong>Your name and (optionally) phone number:</Strong> collected at
+            sign-up. These are kept <Strong>private</Strong> — they are never shown
+            on your public profile and are visible only to you and to
+            administrators for support and account security.
+          </>,
+          <>
             <Strong>Username:</Strong> a public display name you choose at
             sign-up. If you sign up by a method that doesn’t supply one, we
             generate a random handle (e.g. <code>user_1a2b3c4d</code>); we never

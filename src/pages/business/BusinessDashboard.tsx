@@ -109,6 +109,7 @@ function BusinessListings({ businessId }: { businessId: string }) {
 /** A single owned business: header, plan chip, role, quick links, listings. */
 function BusinessCard({ business }: { business: MyBusiness }) {
   const links: { label: string; to: string }[] = [
+    { label: 'Campaigns', to: `/business/${business.id}/campaigns` },
     { label: 'Import CSV', to: '/business/import' },
     { label: 'Team', to: `/business/${business.id}/members` },
     { label: 'Analytics', to: `/business/${business.id}/analytics` },

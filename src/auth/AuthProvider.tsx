@@ -40,6 +40,13 @@ interface AuthContextValue {
     email: string,
     password: string,
     username: string,
+    extras?: {
+      firstName?: string;
+      lastName?: string;
+      phone?: string;
+      marketingOptIn?: boolean;
+      termsAccepted?: boolean;
+    },
   ) => Promise<{ needsEmailConfirmation: boolean }>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -183,7 +190,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [userId]);
 
   const signUp = useCallback(
-    async (email: string, password: string, username: string) => {
+    async (
+      email: string,
+      password: string,
+      username: string,
+      extras?: {
+        firstName?: string;
+        lastName?: string;
+        phone?: string;
+        marketingOptIn?: boolean;
+        termsAccepted?: boolean;
+      },
+    ) => {
       // Validate against the same rule the DB enforces so the user gets a
       // friendly message instead of a raw constraint violation.
       if (!USERNAME_RE.test(username)) {
@@ -195,7 +213,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email,
         password,
         options: {
-          data: { username },
+          // The signup trigger reads these into profiles / profile_private /
+          // user_consents — the name and phone never land in the public profile.
+          data: {
+            username,
+            first_name: extras?.firstName ?? '',
+            last_name: extras?.lastName ?? '',
+            phone: extras?.phone ?? '',
+            marketing_opt_in: extras?.marketingOptIn ?? false,
+            terms_accepted: extras?.termsAccepted === true ? 'true' : 'false',
+          },
           // Where the confirmation link sends them back to. BASE_URL carries the
           // GitHub Pages '/watrloo/' prefix in prod and '/' in dev, so this
           // resolves to the deployed origin either way. The URL must be on

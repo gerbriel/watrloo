@@ -2,7 +2,7 @@ import type { FormEvent } from 'react';
 import { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Field';
+import { Checkbox, Input } from '@/components/ui/Field';
 import { useAuth } from '@/auth/AuthProvider';
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,30}$/;
@@ -31,9 +31,16 @@ export function SignUp() {
   const { signUp, session } = useAuth();
   const navigate = useNavigate();
 
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  // Pre-checked per the owner's US-launch decision; terms is mandatory,
+  // marketing is not. (EU rollout will require marketing un-ticked by default.)
+  const [marketingOptIn, setMarketingOptIn] = useState(true);
+  const [termsAccepted, setTermsAccepted] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
@@ -75,9 +82,19 @@ export function SignUp() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (!firstName.trim() || !lastName.trim()) {
+      setError('Enter your first and last name.');
+      return;
+    }
+    if (phone.trim() && !/^[+()\-.\s\d]{7,20}$/.test(phone.trim())) {
+      setError('That phone number doesn’t look right (digits, +, - only).');
+      return;
+    }
     if (!USERNAME_RE.test(username)) {
       setError(
-        'Username must be 3–30 characters, using only letters, numbers, and underscores.',
+        username.includes('@')
+          ? 'Username isn’t your email — it’s a public display name. Use 3–30 letters, numbers, or underscores (your email goes in the Email field below).'
+          : 'Username must be 3–30 characters, using only letters, numbers, and underscores.',
       );
       return;
     }
@@ -89,10 +106,20 @@ export function SignUp() {
       setError('Password must be at least 6 characters.');
       return;
     }
+    if (!termsAccepted) {
+      setError('You must accept the Terms & Conditions to create an account.');
+      return;
+    }
     setError(null);
     setSubmitting(true);
     try {
-      const { needsEmailConfirmation } = await signUp(email.trim(), password, username);
+      const { needsEmailConfirmation } = await signUp(email.trim(), password, username, {
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        phone: phone.trim() || undefined,
+        marketingOptIn,
+        termsAccepted,
+      });
       if (needsEmailConfirmation) setSentTo(email.trim());
       else navigate('/browse', { replace: true });
     } catch (err) {
@@ -110,12 +137,36 @@ export function SignUp() {
       </p>
 
       <form onSubmit={onSubmit} className="mt-6 flex flex-col gap-4" noValidate>
+        <div className="grid grid-cols-2 gap-3">
+          <Input
+            label="First name"
+            autoComplete="given-name"
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
+            required
+          />
+          <Input
+            label="Last name"
+            autoComplete="family-name"
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value)}
+            required
+          />
+        </div>
+        <Input
+          label="Phone (optional)"
+          type="tel"
+          autoComplete="tel"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          hint="Kept private — never shown on your public profile."
+        />
         <Input
           label="Username"
           autoComplete="username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          hint="3–30 characters. Letters, numbers, and underscores."
+          hint="3–30 characters. Letters, numbers, and underscores. This is public."
           required
         />
         <Input
@@ -135,6 +186,34 @@ export function SignUp() {
           hint="At least 6 characters."
           required
         />
+
+        <div className="flex flex-col gap-2 rounded-lg border border-app bg-raised p-3">
+          <Checkbox
+            label="Send me offers from local businesses (in-app only, max 3 a week — you can turn this off anytime)"
+            checked={marketingOptIn}
+            onChange={(e) => setMarketingOptIn(e.target.checked)}
+          />
+          <div className="flex items-start gap-2">
+            <input
+              id="terms-accept"
+              type="checkbox"
+              checked={termsAccepted}
+              onChange={(e) => setTermsAccepted(e.target.checked)}
+              className="mt-0.5 size-4 shrink-0 accent-flush-600"
+            />
+            <label htmlFor="terms-accept" className="text-sm text-app select-none">
+              I agree to the{' '}
+              <Link to="/terms" className="font-medium text-flush-500 hover:underline">
+                Terms & Conditions
+              </Link>{' '}
+              and the{' '}
+              <Link to="/privacy" className="font-medium text-flush-500 hover:underline">
+                Privacy Policy
+              </Link>{' '}
+              <span className="text-muted">(required)</span>
+            </label>
+          </div>
+        </div>
 
         <div role="alert" aria-live="assertive">
           {error && (

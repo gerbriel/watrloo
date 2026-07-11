@@ -37,6 +37,7 @@ export function AdminLayout() {
         <Tab to="/admin/reports" label="Reports" />
         <Tab to="/admin/reviews" label="Reviews" />
         <Tab to="/admin/bathrooms" label="Bathrooms" />
+        {isAdmin && <Tab to="/admin/campaigns" label="Campaigns" />}
         {isAdmin && <Tab to="/admin/requests" label="Business requests" />}
         {isAdmin && <Tab to="/admin/claims" label="Claims" />}
         {isAdmin && <Tab to="/admin/roles" label="Roles" />}

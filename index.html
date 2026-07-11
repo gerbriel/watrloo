@@ -12,14 +12,19 @@
     <title>Watrloo — rate public bathrooms</title>
     <script>
       // Apply the persisted theme before first paint to avoid a flash of the
-      // wrong scheme. Absent attribute = follow the OS preference.
+      // wrong scheme. Dark is the default first-visit experience; an explicit
+      // choice (light/dark/system) from the toggle always wins.
       (function () {
         try {
           var t = localStorage.getItem('watrloo-theme');
           if (t === 'light' || t === 'dark') {
             document.documentElement.dataset.theme = t;
+          } else if (t !== 'system') {
+            document.documentElement.dataset.theme = 'dark';
           }
-        } catch (_) {}
+        } catch (_) {
+          document.documentElement.dataset.theme = 'dark';
+        }
       })();
     </script>
   </head>

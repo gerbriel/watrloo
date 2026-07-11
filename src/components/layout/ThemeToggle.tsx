@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 type Theme = 'system' | 'light' | 'dark';
 
 const STORAGE_KEY = 'watrloo-theme';
-const ORDER: readonly Theme[] = ['system', 'light', 'dark'];
+const ORDER: readonly Theme[] = ['dark', 'light', 'system'];
 
 const LABELS: Record<Theme, string> = {
   system: 'System',
@@ -11,10 +11,16 @@ const LABELS: Record<Theme, string> = {
   dark: 'Dark',
 };
 
+/**
+ * Dark is the default first-visit theme (owner decision): nothing stored reads
+ * as 'dark', and choosing "system" is stored explicitly — it is an opt-in to
+ * following the OS, not the absence of a choice.
+ */
 function readStoredTheme(): Theme {
-  if (typeof localStorage === 'undefined') return 'system';
+  if (typeof localStorage === 'undefined') return 'dark';
   const value = localStorage.getItem(STORAGE_KEY);
-  return value === 'light' || value === 'dark' ? value : 'system';
+  if (value === 'light' || value === 'dark' || value === 'system') return value;
+  return 'dark';
 }
 
 /**
@@ -37,8 +43,9 @@ export function ThemeToggle() {
 
   useEffect(() => {
     applyTheme(theme);
-    if (theme === 'system') localStorage.removeItem(STORAGE_KEY);
-    else localStorage.setItem(STORAGE_KEY, theme);
+    // Always persist, including 'system' — absence means "never chose", which
+    // defaults to dark, so an explicit system choice must be distinguishable.
+    localStorage.setItem(STORAGE_KEY, theme);
   }, [theme]);
 
   function cycle() {

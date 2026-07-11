@@ -2,9 +2,13 @@ import { createBrowserRouter, Link, Navigate } from 'react-router-dom';
 import { Layout } from '@/components/layout/Layout';
 import { RequireAuth } from '@/auth/RequireAuth';
 import { RequireRole } from '@/auth/RequireRole';
+import { useAuth } from '@/auth/AuthProvider';
 import { Landing } from '@/pages/Landing';
-import { Home } from '@/pages/Home';
-import { MapPage } from '@/pages/MapPage';
+import { Explore } from '@/pages/Explore';
+import { MessagesPage } from '@/pages/Messages';
+import { Terms } from '@/pages/Terms';
+import { Campaigns } from '@/pages/business/Campaigns';
+import { AdminCampaigns } from '@/pages/admin/AdminCampaigns';
 import { NewBathroomPage } from '@/pages/NewBathroom';
 import { BathroomDetail } from '@/pages/BathroomDetail';
 import { SignIn } from '@/pages/SignIn';
@@ -47,13 +51,37 @@ function NotFound() {
   );
 }
 
+/**
+ * The root: logged-in visitors skip the marketing landing and go straight to
+ * the app (owner decision). We hold on the very first session check so a
+ * logged-in user never flashes the landing before the redirect.
+ */
+function RootRoute() {
+  const { session, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="grid min-h-[60vh] place-items-center" role="status" aria-live="polite">
+        <span
+          className="size-8 animate-spin rounded-full border-2 border-flush-500 border-t-transparent"
+          aria-hidden="true"
+        />
+        <span className="sr-only">Loading…</span>
+      </div>
+    );
+  }
+  return session ? <Navigate to="/explore" replace /> : <Landing />;
+}
+
 export const router = createBrowserRouter([
   {
     element: <Layout />,
     children: [
-      { path: '/', element: <Landing /> },
-      { path: '/browse', element: <Home /> },
-      { path: '/map', element: <MapPage /> },
+      { path: '/', element: <RootRoute /> },
+      // Browse + Map are now one Explore view; old paths redirect (the signup
+      // confirmation link and landing CTAs point at /browse).
+      { path: '/explore', element: <Explore /> },
+      { path: '/browse', element: <Navigate to="/explore" replace /> },
+      { path: '/map', element: <Navigate to="/explore" replace /> },
       {
         path: '/bathrooms/new',
         element: (
@@ -70,11 +98,20 @@ export const router = createBrowserRouter([
       // not a normal login — RequireAuth would bounce it before it resolves.
       { path: '/reset-password', element: <ResetPassword /> },
       { path: '/privacy', element: <Privacy /> },
+      { path: '/terms', element: <Terms /> },
       {
         path: '/profile',
         element: (
           <RequireAuth>
             <ProfilePage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: '/messages',
+        element: (
+          <RequireAuth>
+            <MessagesPage />
           </RequireAuth>
         ),
       },
@@ -132,6 +169,14 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        path: '/business/:businessId/campaigns',
+        element: (
+          <RequireAuth>
+            <Campaigns />
+          </RequireAuth>
+        ),
+      },
+      {
         path: '/admin',
         element: (
           <RequireRole>
@@ -143,6 +188,7 @@ export const router = createBrowserRouter([
           { path: 'reports', element: <AdminReports /> },
           { path: 'reviews', element: <AdminReviews /> },
           { path: 'bathrooms', element: <AdminBathrooms /> },
+          { path: 'campaigns', element: <AdminCampaigns /> },
           {
             path: 'requests',
             element: (

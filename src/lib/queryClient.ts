@@ -46,4 +46,10 @@ export const queryKeys = {
   adminAccessRequests: () => ['admin', 'accessRequests'] as const,
   adminClaims: () => ['admin', 'claims'] as const,
   openAccessRequestCount: () => ['admin', 'accessRequestCount'] as const,
+  // Growth platform
+  myConsent: (userId: string) => ['consent', userId] as const,
+  myMessages: (userId: string) => ['messages', userId] as const,
+  featured: (surface: string) => ['featured', surface] as const,
+  campaigns: (businessId: string) => ['campaigns', businessId] as const,
+  pendingCampaigns: () => ['admin', 'campaigns'] as const,
 };

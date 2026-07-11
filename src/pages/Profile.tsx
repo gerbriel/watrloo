@@ -7,6 +7,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { supabase } from '@/lib/supabase';
 import { deleteMyAccount } from '@/lib/api/profiles';
 import { ServiceRecord } from '@/components/review/ServiceRecord';
+import { ConsentSettings } from '@/components/growth/ConsentSettings';
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,30}$/;
 
@@ -180,6 +181,10 @@ export function ProfilePage() {
           <span className="text-app">{joined}</span>
         </Row>
       </dl>
+
+      <div className="mt-6">
+        <ConsentSettings userId={userId} />
+      </div>
 
       <section className="mt-10 rounded-xl border border-red-500/40 bg-red-500/5 p-5">
         <h2 className="text-base font-semibold text-app">Delete account</h2>
