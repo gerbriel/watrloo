@@ -145,7 +145,7 @@ function AddForm({ kind, onSaved }: { kind: AttributeKind; onSaved: () => void }
       }}
     >
       <p className="text-sm font-medium text-app">
-        Add {kind === 'amenity' ? 'an amenity' : 'a caution'}
+        Add {kind === 'amenity' ? 'an amenity' : kind === 'caution' ? 'a caution' : 'a category'}
       </p>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <Input
@@ -229,6 +229,7 @@ export function AdminAttributes() {
   const sections: { kind: AttributeKind; title: string }[] = [
     { kind: 'amenity', title: 'Amenities' },
     { kind: 'caution', title: 'Cautions' },
+    { kind: 'category', title: 'Categories' },
   ];
 
   return (

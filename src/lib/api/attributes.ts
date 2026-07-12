@@ -8,7 +8,7 @@ import { sanitizeLine } from '@/lib/sanitize';
  * legacy boolean amenities are separate and unchanged.
  */
 
-export type AttributeKind = 'amenity' | 'caution';
+export type AttributeKind = 'amenity' | 'caution' | 'category';
 
 export interface AttributeDef {
   slug: string;

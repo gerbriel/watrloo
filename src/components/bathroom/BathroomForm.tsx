@@ -209,6 +209,7 @@ export function BathroomForm({
 
   const amenityDefs = attrDefs.filter((d) => d.kind === 'amenity');
   const cautionDefs = attrDefs.filter((d) => d.kind === 'caution');
+  const categoryDefs = attrDefs.filter((d) => d.kind === 'category');
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
@@ -332,6 +333,23 @@ export function BathroomForm({
               checked={selectedSlugs.includes(d.slug)}
               onChange={() => toggleSlug(d.slug)}
               style={{ accentColor: '#d97706' }}
+            />
+          ))}
+        </fieldset>
+      )}
+
+      {categoryDefs.length > 0 && (
+        <fieldset className="flex flex-col gap-2">
+          <legend className="mb-1 text-sm font-medium text-app">
+            What kind of place is this?
+          </legend>
+          {categoryDefs.map((d) => (
+            <Checkbox
+              key={d.slug}
+              label={d.label}
+              title={d.description ?? undefined}
+              checked={selectedSlugs.includes(d.slug)}
+              onChange={() => toggleSlug(d.slug)}
             />
           ))}
         </fieldset>
