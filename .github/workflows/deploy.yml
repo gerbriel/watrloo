@@ -34,8 +34,10 @@ jobs:
 
       - run: npm run build
         env:
-          # Pages serves this project repo at /watrloo/, not the root.
-          BASE_PATH: /watrloo/
+          # The custom domain (watrloo.com) serves from the root. Before the
+          # domain existed this was /watrloo/ — Pages puts project repos under
+          # a subpath when served from github.io.
+          BASE_PATH: /
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           # Optional. Unset -> the map degrades to pins on a flat background
@@ -44,7 +46,7 @@ jobs:
           VITE_BASEMAP_ASSETS_URL: ${{ vars.VITE_BASEMAP_ASSETS_URL }}
 
       - name: SPA fallback + disable Jekyll
-        # Pages has no rewrite rules, so a deep link like /watrloo/bathrooms/:id
+        # Pages has no rewrite rules, so a deep link like /bathrooms/:id
         # would 404 on the server. Serving index.html as the 404 page lets the
         # router take over. (The response status really is 404; browsers render
         # the body anyway, and crawlers are told the truth.)
