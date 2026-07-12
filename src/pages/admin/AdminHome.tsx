@@ -62,9 +62,58 @@ function QueueTile({
   );
 }
 
+function UserHome() {
+  return (
+    <div className="flex flex-col gap-6">
+      <div>
+        <h2 className="text-lg font-semibold text-app">Your regular account</h2>
+        <p className="text-sm text-muted">
+          Everything here happens as an ordinary member — same as any other
+          Watrloo user.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Link to="/profile" className="flex flex-col gap-1 rounded-xl border border-app p-4 transition-colors hover:bg-raised">
+          <span className="text-sm font-semibold text-app">My profile</span>
+          <span className="text-xs text-muted">Reviews, rank, removed content & appeals</span>
+        </Link>
+        <Link to="/explore" className="flex flex-col gap-1 rounded-xl border border-app p-4 transition-colors hover:bg-raised">
+          <span className="text-sm font-semibold text-app">Explore</span>
+          <span className="text-xs text-muted">Browse and review bathrooms</span>
+        </Link>
+        <Link to="/bathrooms/new" className="flex flex-col gap-1 rounded-xl border border-app p-4 transition-colors hover:bg-raised">
+          <span className="text-sm font-semibold text-app">Add a bathroom</span>
+          <span className="text-xs text-muted">Contribute a new listing</span>
+        </Link>
+        <Link to="/business" className="flex flex-col gap-1 rounded-xl border border-app p-4 transition-colors hover:bg-raised">
+          <span className="text-sm font-semibold text-app">For business</span>
+          <span className="text-xs text-muted">Claim and manage listings</span>
+        </Link>
+      </div>
+
+      <div className="rounded-xl border border-app bg-raised p-4">
+        <p className="text-sm font-medium text-app">How ownership works</p>
+        <ul className="mt-2 flex flex-col gap-1 text-sm text-muted">
+          <li>
+            · Adding a bathroom is a contribution — it does <span className="font-medium text-app">not</span> make
+            you its owner. You get credit, and you can appeal if it's ever removed.
+          </li>
+          <li>
+            · Owning a listing (managing its facts, responding as the venue) comes
+            only through a <span className="font-medium text-app">business account</span> claiming it — one
+            bathroom or a whole chain assigned to the business.
+          </li>
+          <li>· Reviews always belong to their authors; nobody owns those.</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 export function AdminHome() {
   const { isAdmin: isRealAdmin } = useAuth();
-  const { viewAsAdmin } = useAdminView();
+  const { view, viewAsAdmin } = useAdminView();
   const isAdmin = isRealAdmin && viewAsAdmin;
 
   const assigned = useQuery({
@@ -90,6 +139,8 @@ export function AdminHome() {
   });
 
   const c = counts.data;
+
+  if (view === 'user') return <UserHome />;
 
   return (
     <div className="flex flex-col gap-6">

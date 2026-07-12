@@ -423,10 +423,14 @@ export function BathroomForm({
         </p>
       )}
 
-      <div>
+      <div className="flex flex-col gap-2">
         <Button type="submit" size="lg" loading={saving}>
           {submitLabel}
         </Button>
+        <p className="text-xs text-muted">
+          Adding a bathroom is a contribution — it doesn't make you its owner.
+          Businesses can claim listings they operate to manage them.
+        </p>
       </div>
     </form>
   );

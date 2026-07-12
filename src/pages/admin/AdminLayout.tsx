@@ -3,8 +3,11 @@ import { NavLink, Outlet, useLocation, useNavigate, useOutletContext } from 'rea
 import { useAuth } from '@/auth/AuthProvider';
 import { cn } from '@/lib/cn';
 
-/** Child pages read the effective view (an admin can work in moderator view). */
+export type PanelView = 'admin' | 'moderator' | 'user';
+
+/** Child pages read the effective view (an admin can work in any view). */
 export interface AdminViewContext {
+  view: PanelView;
   viewAsAdmin: boolean;
 }
 
@@ -77,7 +80,13 @@ const GROUPS: NavGroup[] = [
   },
 ];
 
-function visibleGroups(isAdmin: boolean): NavGroup[] {
+const USER_GROUPS: NavGroup[] = [
+  { label: 'Your account', items: [{ to: '/admin', label: 'Home' }] },
+];
+
+function visibleGroups(view: PanelView): NavGroup[] {
+  if (view === 'user') return USER_GROUPS;
+  const isAdmin = view === 'admin';
   return GROUPS.map((g) => ({
     ...g,
     items: g.items.filter((i) => isAdmin || !i.adminOnly),
@@ -91,17 +100,19 @@ export function AdminLayout() {
   // An admin who also moderates can flip into the focused moderator view; the
   // choice sticks for the tab session. Pure presentation — the server gates
   // every action by real role either way.
-  const [view, setView] = useState<'admin' | 'moderator'>(() => {
+  const [view, setView] = useState<PanelView>(() => {
     try {
-      return sessionStorage.getItem(VIEW_KEY) === 'moderator' ? 'moderator' : 'admin';
+      const saved = sessionStorage.getItem(VIEW_KEY);
+      return saved === 'moderator' || saved === 'user' ? saved : 'admin';
     } catch {
       return 'admin';
     }
   });
-  const viewAsAdmin = isAdmin && view === 'admin';
-  const groups = visibleGroups(viewAsAdmin);
+  const effectiveView: PanelView = isAdmin ? view : view === 'user' ? 'user' : 'moderator';
+  const viewAsAdmin = effectiveView === 'admin';
+  const groups = visibleGroups(effectiveView);
 
-  function switchView(next: 'admin' | 'moderator') {
+  function switchView(next: PanelView) {
     setView(next);
     try {
       sessionStorage.setItem(VIEW_KEY, next);
@@ -117,47 +128,43 @@ export function AdminLayout() {
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-bold text-app">
-            {viewAsAdmin ? 'Control room' : 'Moderator panel'}
+            {effectiveView === 'admin'
+              ? 'Control room'
+              : effectiveView === 'moderator'
+                ? 'Moderator panel'
+                : 'Your account'}
           </h1>
           <p className="text-sm text-muted">
             Signed in as @{profile?.username ?? '…'}. Every removal, restore,
             setting change, and role change here is written to the audit log.
           </p>
         </div>
-        {isAdmin && (
-          <div
-            role="group"
-            aria-label="Switch view"
-            className="flex overflow-hidden rounded-lg border border-app text-xs font-medium"
-          >
+        <div
+          role="group"
+          aria-label="Switch view"
+          className="flex overflow-hidden rounded-lg border border-app text-xs font-medium"
+        >
+          {([
+            ...(isAdmin ? (['admin'] as PanelView[]) : []),
+            'moderator',
+            'user',
+          ] as PanelView[]).map((v) => (
             <button
+              key={v}
               type="button"
-              aria-pressed={view === 'admin'}
-              onClick={() => switchView('admin')}
+              aria-pressed={effectiveView === v}
+              onClick={() => switchView(v)}
               className={cn(
-                'px-3 py-1.5 transition-colors',
-                view === 'admin'
+                'px-3 py-1.5 capitalize transition-colors',
+                effectiveView === v
                   ? 'bg-flush-600 text-white'
                   : 'bg-surface text-muted hover:text-app',
               )}
             >
-              Admin
+              {v}
             </button>
-            <button
-              type="button"
-              aria-pressed={view === 'moderator'}
-              onClick={() => switchView('moderator')}
-              className={cn(
-                'px-3 py-1.5 transition-colors',
-                view === 'moderator'
-                  ? 'bg-flush-600 text-white'
-                  : 'bg-surface text-muted hover:text-app',
-              )}
-            >
-              Moderator
-            </button>
-          </div>
-        )}
+          ))}
+        </div>
       </header>
 
       {/* Small screens: one native switcher, zero overflow. */}
@@ -216,7 +223,7 @@ export function AdminLayout() {
         </nav>
 
         <div className="min-w-0 flex-1">
-          <Outlet context={{ viewAsAdmin } satisfies AdminViewContext} />
+          <Outlet context={{ view: effectiveView, viewAsAdmin } satisfies AdminViewContext} />
         </div>
       </div>
     </div>
