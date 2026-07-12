@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { ComponentType, CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
@@ -105,42 +106,98 @@ const STEPS = [
  * top-to-bottom as: overview → claim → edit → respond → import → team →
  * analytics → storefront → promotions.
  */
-const TOUR: readonly {
+interface TierPreview {
   caption: string;
-  detail: string;
-  previews: readonly ComponentType[];
-}[] = [
+  Component: ComponentType;
+}
+
+interface Tier {
+  key: string;
+  name: string;
+  price: string;
+  per: string;
+  tagline: string;
+  popular?: boolean;
+  features: readonly string[];
+  showcaseTitle: string;
+  showcaseBlurb: string;
+  previews: readonly TierPreview[];
+}
+
+/**
+ * Real tiers from docs/growth/PRICING.md (also seeded in the plans table).
+ * Selecting a tier swaps in hard-coded examples of what THAT plan feels like.
+ */
+const TIERS: readonly Tier[] = [
   {
-    caption: 'Start on your dashboard',
-    detail:
-      'Every location you manage, its rating, and what needs attention — all on one screen.',
-    previews: [DashboardPreview],
+    key: 'solo',
+    name: 'Solo',
+    price: '$10',
+    per: '/mo · $100/yr',
+    tagline: 'One location, done right.',
+    features: [
+      '1 claimed location + Official badge',
+      'Edit facts, hours & amenities',
+      'Respond to reviews in public',
+      '1 featured placement / week',
+      'Basic analytics · 2 team seats',
+    ],
+    showcaseTitle: 'What Solo feels like',
+    showcaseBlurb:
+      'Claim your spot, perfect the details, and answer your reviewers — the essentials for a single location.',
+    previews: [
+      { caption: 'Claim your location and get verified', Component: ClaimPreview },
+      { caption: 'Take control of the details', Component: ListingEditPreview },
+      { caption: 'Reply where visitors can see it', Component: ReviewResponsePreview },
+    ],
   },
   {
-    caption: 'Claim a location, then perfect the details',
-    detail:
-      'Prove ownership to light up the Official badge, then take control of the hours, amenities, and access notes.',
-    previews: [ClaimPreview, ListingEditPreview],
+    key: 'growth',
+    name: 'Growth',
+    price: '$39',
+    per: '/mo · $390/yr',
+    tagline: 'A handful of locations, one console.',
+    popular: true,
+    features: [
+      'Up to 5 locations (+$6/extra to 15)',
+      'Everything in Solo',
+      '3 featured placements / week',
+      'Standard analytics · CSV import',
+      '5 team seats · 1 newsletter slot/mo',
+    ],
+    showcaseTitle: 'What Growth feels like',
+    showcaseBlurb:
+      'Run several locations from one dashboard, bring in your team, and see which spots pull their weight.',
+    previews: [
+      { caption: 'Every location on one screen', Component: DashboardPreview },
+      { caption: 'Your whole team, scoped access', Component: TeamPreview },
+      { caption: 'Know which locations perform', Component: AnalyticsPreview },
+    ],
   },
   {
-    caption: 'Respond in public, or bring a whole chain online',
-    detail:
-      'Reply to reviews where visitors can see them — or upload a single CSV to import a fleet of locations at once.',
-    previews: [ReviewResponsePreview, CsvImportPreview],
-  },
-  {
-    caption: 'Add your team and watch the numbers',
-    detail:
-      'Invite teammates with scoped access, then track views, ratings, and trends across every listing.',
-    previews: [TeamPreview, AnalyticsPreview],
-  },
-  {
-    caption: 'Turn a listing into a storefront that sells',
-    detail:
-      'Show off a verified storefront and publish promotions that turn nearby searches into foot traffic.',
-    previews: [StorefrontPreview, PromotionsPreview],
+    key: 'chain',
+    name: 'Chain',
+    price: '$149',
+    per: '/mo · $1,490/yr',
+    tagline: 'A fleet at scale.',
+    features: [
+      'Up to 25 locations (+$4/extra to 100)',
+      'Everything in Growth',
+      '3 featured placements / week per location',
+      'Advanced analytics · API read access',
+      '15 seats · 3 newsletter slots/mo · priority support',
+    ],
+    showcaseTitle: 'What Chain feels like',
+    showcaseBlurb:
+      'Import the whole footprint from a CSV, promote every storefront, and keep the brand consistent everywhere.',
+    previews: [
+      { caption: 'Bring the fleet online in minutes', Component: CsvImportPreview },
+      { caption: 'Promotions that drive foot traffic', Component: PromotionsPreview },
+      { caption: 'Every listing a verified storefront', Component: StorefrontPreview },
+    ],
   },
 ];
+
 
 /** A verified "storefront" preview that echoes Landing's SampleCard styling. */
 function StorefrontCard() {
@@ -202,6 +259,7 @@ function StorefrontCard() {
 
 export function ForBusiness() {
   const navigate = useNavigate();
+  const [selectedTier, setSelectedTier] = useState('growth');
   const { isBusinessMember } = useAuth();
 
   const primary = isBusinessMember
@@ -310,59 +368,115 @@ export function ForBusiness() {
         </div>
       </section>
 
-      {/* Product tour + capabilities */}
-      <section className="flex flex-col gap-16">
+      {/* Pricing + tier-driven showcase */}
+      <section className="flex flex-col gap-10">
         <div className="max-w-2xl">
           <h2 className="font-display text-3xl font-bold tracking-tight text-app">
-            What it looks like once you’re in
+            Plans &amp; pricing
           </h2>
           <p className="mt-3 text-lg text-muted">
-            A quick tour of the business dashboard — from claiming a location to
-            running promotions. No account needed to look around.
+            Every paid plan starts with a 14-day trial. Pick a tier to see real
+            examples of what it feels like — no account needed to look around.
           </p>
         </div>
 
-        {/* A. Hard-coded preview tour */}
-        <div className="flex flex-col gap-14">
-          {TOUR.map((group, i) => (
-            <div key={group.caption} className="flex flex-col gap-5">
-              <div className="flex items-baseline gap-3">
-                <span className="font-display text-sm font-bold text-flush-500">
-                  {String(i + 1).padStart(2, '0')}
-                </span>
-                <div>
-                  <h3 className="font-display text-lg font-semibold text-app">
-                    {group.caption}
-                  </h3>
-                  <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted">
-                    {group.detail}
-                  </p>
-                </div>
-              </div>
-              <div
-                className={
-                  group.previews.length > 1
-                    ? 'grid gap-5 lg:grid-cols-2'
-                    : 'grid gap-5'
-                }
+        <div className="grid gap-4 md:grid-cols-3">
+          {TIERS.map((t) => {
+            const selected = t.key === selectedTier;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => setSelectedTier(t.key)}
+                className={`relative flex flex-col gap-3 rounded-2xl border p-6 text-left transition-all ${
+                  selected
+                    ? 'border-flush-500 bg-raised shadow-lg shadow-flush-500/10'
+                    : 'border-app bg-surface hover:border-strong hover:bg-raised'
+                }`}
               >
-                {group.previews.map((Preview) => (
-                  <Preview key={Preview.name} />
+                {t.popular && (
+                  <span className="absolute -top-2.5 right-4 rounded-full bg-flush-600 px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide text-white">
+                    Most popular
+                  </span>
+                )}
+                <div>
+                  <p className="font-display text-lg font-bold text-app">{t.name}</p>
+                  <p className="mt-1">
+                    <span className="font-display text-3xl font-bold text-app">
+                      {t.price}
+                    </span>
+                    <span className="text-sm text-muted"> {t.per}</span>
+                  </p>
+                  <p className="mt-1 text-sm text-muted">{t.tagline}</p>
+                </div>
+                <ul className="flex flex-col gap-1.5 text-sm text-muted">
+                  {t.features.map((f) => (
+                    <li key={f} className="flex gap-2">
+                      <span aria-hidden="true" className="text-flush-500">✓</span>
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+                <span
+                  className={`mt-auto text-sm font-medium ${
+                    selected ? 'text-flush-600' : 'text-muted'
+                  }`}
+                >
+                  {selected ? 'Showing examples below ↓' : 'See examples →'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <p className="text-sm text-muted">
+          Need more than 25 locations, custom limits, or write API access?{' '}
+          <span className="font-medium text-app">Enterprise</span> starts around
+          $500/mo —{' '}
+          <button
+            type="button"
+            onClick={() => navigate('/business/request')}
+            className="font-medium text-flush-600 hover:underline"
+          >
+            tell us what you need
+          </button>
+          . Billing is handled personally after approval — no card required to start.
+        </p>
+
+        {/* The selected tier's hard-coded product examples */}
+        {(() => {
+          const tier = TIERS.find((t) => t.key === selectedTier) ?? TIERS[1];
+          return (
+            <div className="flex flex-col gap-8 rounded-3xl border border-app bg-raised/50 p-6 sm:p-10">
+              <div className="max-w-2xl">
+                <h3 className="font-display text-2xl font-bold tracking-tight text-app">
+                  {tier.showcaseTitle}
+                </h3>
+                <p className="mt-2 text-muted">{tier.showcaseBlurb}</p>
+              </div>
+              <div className="grid gap-6 lg:grid-cols-3">
+                {tier.previews.map(({ caption, Component }) => (
+                  <div key={caption} className="flex flex-col gap-3">
+                    <p className="text-sm font-medium text-app">{caption}</p>
+                    <Component />
+                  </div>
                 ))}
               </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button size="lg" variant="primary" onClick={() => navigate(primary.to)}>
+                  {primary.label}
+                </Button>
+                <span className="text-sm text-muted">
+                  Start on {tier.name} — upgrade any time as you grow.
+                </span>
+              </div>
             </div>
-          ))}
-        </div>
+          );
+        })()}
 
-        {/* B. What you can do once approved (self-contained, brings its own heading) */}
+        {/* What you can do once approved (self-contained, brings its own heading) */}
         <InteractionOptions />
-
-        {/* Section CTA */}
-        <div className="flex flex-wrap gap-3">
-          <Button size="lg" variant="primary" onClick={() => navigate(primary.to)}>
-            {primary.label}
-          </Button>
-        </div>
       </section>
 
       {/* How it works */}
