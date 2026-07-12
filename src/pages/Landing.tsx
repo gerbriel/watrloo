@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { Stars } from '@/components/ui/Stars';
 import { AMENITY_LABELS } from '@/types/db';
+import { RANKS, RANKS_TAGLINE } from '@/lib/ranks';
 
 /** Small inline icons — no icon dependency, no emoji. */
 function Icon({ path, className }: { path: string; className?: string }) {
@@ -112,7 +113,7 @@ export function Landing() {
           <div className="flex flex-col gap-6">
             <span className="rise inline-flex w-fit items-center gap-2 rounded-full border border-app bg-raised/70 px-3 py-1 text-xs font-medium text-muted backdrop-blur">
               <Icon path={ICONS.pin} className="size-3.5 text-flush-500" />
-              Community-sourced restroom reviews
+              The No. 1 app for finding a No. 2 place
             </span>
 
             <h1
@@ -128,7 +129,8 @@ export function Landing() {
               style={{ '--rise-delay': '0.12s' } as CSSProperties}
             >
               A map of public restrooms rated by the people who’ve used them — on
-              the things that actually matter when you’re out and need one now.
+              the things that actually matter when nature declares war and
+              you need somewhere to make your last stand.
             </p>
 
             <div
@@ -147,7 +149,7 @@ export function Landing() {
               className="rise text-sm text-muted"
               style={{ '--rise-delay': '0.24s' } as CSSProperties}
             >
-              Free, and no account needed to browse.
+              Free, and no account needed to browse. We won’t give you the runaround.
             </p>
           </div>
 
@@ -270,6 +272,69 @@ export function Landing() {
       </section>
 
       {/* Final CTA */}
+      {/* Reviewer ranks — the Grande Armée du Trône */}
+      <section className="flex flex-col gap-10">
+        <div className="max-w-2xl">
+          <h2 className="font-display text-3xl font-bold tracking-tight text-app">
+            Enlist in the <span className="text-gradient">Grande Armée du Trône</span>
+          </h2>
+          <p className="mt-3 text-lg text-muted">
+            Watrloo is named for Napoleon’s last stand — so every review you file
+            is a <span className="font-medium text-app">campaign</span>, and enough
+            campaigns march you up the ranks of his army. {RANKS_TAGLINE}
+          </p>
+        </div>
+
+        <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {RANKS.map((rank, i) => (
+            <li
+              key={rank.title}
+              className={
+                rank.tier === 'gold'
+                  ? 'flex flex-col gap-1.5 rounded-xl border border-amber-500/40 bg-gradient-to-br from-amber-500/10 to-transparent p-4'
+                  : 'flex flex-col gap-1.5 rounded-xl border border-app bg-raised p-4'
+              }
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="font-display text-xs font-bold text-muted">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <span
+                  className={
+                    rank.tier === 'gold'
+                      ? 'rounded-full bg-amber-500/15 px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide text-amber-600'
+                      : 'rounded-full bg-sunken px-2 py-0.5 text-[0.65rem] font-medium uppercase tracking-wide text-muted'
+                  }
+                >
+                  {rank.min === 0
+                    ? 'day one'
+                    : `${rank.min} review${rank.min === 1 ? '' : 's'}`}
+                </span>
+              </div>
+              <p
+                className={
+                  rank.tier === 'gold'
+                    ? 'font-display text-base font-bold text-amber-600'
+                    : 'font-display text-base font-bold text-app'
+                }
+              >
+                {rank.title}
+              </p>
+              <p className="text-xs leading-relaxed text-muted">{rank.motto}</p>
+            </li>
+          ))}
+        </ol>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <Button size="lg" variant="primary" onClick={() => navigate('/signup')}>
+            Enlist — it’s free
+          </Button>
+          <span className="text-sm text-muted">
+            Your first review earns a promotion on the spot. No boot camp, just bathrooms.
+          </span>
+        </div>
+      </section>
+
       <section className="relative isolate overflow-hidden rounded-3xl border border-app bg-raised px-6 py-16 text-center">
         <div
           className="glow-blob -z-10 left-1/2 top-0 h-64 w-[36rem] -translate-x-1/2"
@@ -277,10 +342,11 @@ export function Landing() {
         />
         <div className="grid-fade absolute inset-0 -z-10" aria-hidden="true" />
         <h2 className="mx-auto max-w-xl font-display text-3xl font-bold tracking-tight text-app sm:text-4xl">
-          The next bathroom you find could save someone’s afternoon.
+          The next bathroom you review could save someone’s afternoon.
         </h2>
         <p className="mx-auto mt-4 max-w-md text-lg text-muted">
-          Start browsing, or add the first review for a place you know.
+          Start browsing, add a throne you know, and rest assured: when you
+          gotta go, this is the way to go.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <Button size="lg" variant="primary" onClick={() => navigate('/browse')}>
