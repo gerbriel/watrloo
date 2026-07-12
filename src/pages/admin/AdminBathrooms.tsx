@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   bulkRestoreBathrooms,
@@ -13,6 +13,8 @@ import { listAttributeDefs } from '@/lib/api/attributes';
 import { assignBathrooms } from '@/lib/api/moderation';
 import { searchUsers } from '@/lib/api/adminDirectory';
 import { useAuth } from '@/auth/AuthProvider';
+import { decideBathroomEdit, listEditRequests } from '@/lib/api/contributions';
+import type { EditRequestWithContext } from '@/lib/api/contributions';
 import { hardDeleteBathroom } from '@/lib/api/appeals';
 import { updateBathroom } from '@/lib/api/bathrooms';
 import { geocodeAddress, GEOCODE_ATTRIBUTION } from '@/lib/geocode';
@@ -22,6 +24,119 @@ import { AMENITY_KEYS, AMENITY_LABELS } from '@/types/db';
 import type { Amenities, Bathroom, NewBathroom } from '@/types/db';
 import { Button } from '@/components/ui/Button';
 import { Input, Textarea, Checkbox } from '@/components/ui/Field';
+
+const EDIT_FIELD_LABELS: Record<string, string> = {
+  name: 'Name',
+  address: 'Address',
+  description: 'Description',
+  wheelchair_accessible: 'Wheelchair accessible',
+  gender_neutral: 'Gender neutral',
+  changing_table: 'Changing table',
+  requires_key: 'Requires a key',
+};
+
+/** Creator-suggested edits awaiting admin approval, rendered as diffs. */
+function EditRequestsQueue() {
+  const qc = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ['admin', 'editRequests'],
+    queryFn: () => listEditRequests('open'),
+  });
+
+  const decide = useMutation({
+    mutationFn: ({ id, approve, note }: { id: string; approve: boolean; note?: string }) =>
+      decideBathroomEdit(id, approve, note),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'editRequests'] });
+      void qc.invalidateQueries({ queryKey: queryKeys.adminBathrooms() });
+      void qc.invalidateQueries({ queryKey: ['bathrooms'] });
+    },
+  });
+
+  if (!data || data.length === 0) return null;
+
+  function diffRows(r: EditRequestWithContext): [string, string, string][] {
+    const rows: [string, string, string][] = [];
+    const current: Record<string, unknown> = r.bathroom ?? {};
+    for (const [key, proposed] of Object.entries(r.proposed)) {
+      const label = EDIT_FIELD_LABELS[key] ?? key;
+      const before = current[key as keyof typeof current];
+      const fmt = (v: unknown) =>
+        v == null || v === '' ? '(empty)' : typeof v === 'boolean' ? (v ? 'yes' : 'no') : String(v);
+      if (fmt(before) !== fmt(proposed)) rows.push([label, fmt(before), fmt(proposed)]);
+    }
+    return rows;
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-amber-500/40 bg-raised p-4">
+      <p className="text-sm font-semibold text-app">
+        Edit requests awaiting approval ({data.length})
+      </p>
+      <ul className="flex flex-col gap-3">
+        {data.map((r) => {
+          const busy = decide.isPending && decide.variables?.id === r.id;
+          const rows = diffRows(r);
+          return (
+            <li key={r.id} className="flex flex-col gap-2 rounded-lg border border-app bg-surface p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-app">
+                  <span className="font-medium">{r.bathroom?.name ?? 'Bathroom'}</span>{' '}
+                  <span className="text-muted">
+                    · suggested by @{r.requester?.username ?? 'unknown'}
+                  </span>
+                </p>
+                <span className="text-xs text-muted">
+                  {new Date(r.created_at).toLocaleDateString()}
+                </span>
+              </div>
+              {r.note && <p className="text-xs italic text-muted">“{r.note}”</p>}
+              {rows.length === 0 ? (
+                <p className="text-xs text-muted">No visible changes (values already match).</p>
+              ) : (
+                <ul className="flex flex-col gap-1 text-xs">
+                  {rows.map(([label, before, after]) => (
+                    <li key={label} className="flex flex-wrap gap-1.5">
+                      <span className="font-medium text-app">{label}:</span>
+                      <span className="text-red-500 line-through">{before}</span>
+                      <span aria-hidden="true" className="text-muted">→</span>
+                      <span className="text-green-600">{after}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-red-500 hover:bg-red-500/10"
+                  disabled={busy}
+                  onClick={() => {
+                    const note = window.prompt(
+                      'Reason for rejecting (shown to the requester):',
+                    );
+                    if (note === null) return;
+                    decide.mutate({ id: r.id, approve: false, note: note.trim() || undefined });
+                  }}
+                >
+                  Reject
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={busy}
+                  onClick={() => decide.mutate({ id: r.id, approve: true })}
+                >
+                  Approve & apply
+                </Button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
 
 function AdminBathroomRow({
   b,
@@ -412,6 +527,8 @@ export function AdminBathrooms() {
 
   return (
     <div className="flex flex-col gap-3">
+      <EditRequestsQueue />
+
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <label className="flex items-center gap-1.5 text-muted">
           <input

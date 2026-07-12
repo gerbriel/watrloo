@@ -14,7 +14,13 @@ import { cn } from '@/lib/cn';
  */
 
 async function countRows(
-  table: 'reports' | 'appeals' | 'bathroom_claims' | 'business_access_requests' | 'ad_campaigns',
+  table:
+    | 'reports'
+    | 'appeals'
+    | 'bathroom_claims'
+    | 'business_access_requests'
+    | 'ad_campaigns'
+    | 'bathroom_edit_requests',
   statusColumn: string,
   statusValue: string,
 ): Promise<number> {
@@ -124,16 +130,19 @@ export function AdminHome() {
   const counts = useQuery({
     queryKey: ['admin', 'home', isAdmin],
     queryFn: async () => {
-      const [reports, appeals, claims, requests, campaigns] = await Promise.all([
+      const [reports, appeals, edits, claims, requests, campaigns] = await Promise.all([
         countRows('reports', 'status', 'open'),
         countRows('appeals', 'status', 'open'),
+        isAdmin
+          ? countRows('bathroom_edit_requests', 'status', 'open')
+          : Promise.resolve(0),
         isAdmin ? countRows('bathroom_claims', 'status', 'pending') : Promise.resolve(0),
         isAdmin
           ? countRows('business_access_requests', 'status', 'open')
           : Promise.resolve(0),
         isAdmin ? countRows('ad_campaigns', 'status', 'pending_review') : Promise.resolve(0),
       ]);
-      return { reports, appeals, claims, requests, campaigns };
+      return { reports, appeals, edits, claims, requests, campaigns };
     },
     refetchInterval: 60_000,
   });
@@ -182,6 +191,14 @@ export function AdminHome() {
             label="Open appeals"
             count={c?.appeals}
             blurb="Removals contested by their owners"
+          />
+        )}
+        {isAdmin && (
+          <QueueTile
+            to="/admin/bathrooms"
+            label="Edit requests"
+            count={c?.edits}
+            blurb="Creator-suggested bathroom changes"
           />
         )}
         {isAdmin && (

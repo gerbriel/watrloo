@@ -1,10 +1,17 @@
 import type { FormEvent, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/Button';
 import { Input, Textarea } from '@/components/ui/Field';
 import { useAuth } from '@/auth/AuthProvider';
+import {
+  fileBathroomEdit,
+  myBathrooms,
+  myEditRequests,
+  myReviews,
+} from '@/lib/api/contributions';
+import type { Bathroom } from '@/types/db';
 import { supabase } from '@/lib/supabase';
 import { deleteMyAccount } from '@/lib/api/profiles';
 import type { RemovedItemAppeal } from '@/lib/api/appeals';
@@ -168,6 +175,187 @@ function AppealActions({
  * Renders nothing at all when there is nothing removed — a normal profile
  * shouldn't carry moderation noise.
  */
+function SuggestEditForm({ b, onDone }: { b: Bathroom; onDone: () => void }) {
+  const [name, setName] = useState(b.name);
+  const [address, setAddress] = useState(b.address);
+  const [description, setDescription] = useState(b.description ?? '');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    try {
+      await fileBathroomEdit(
+        b.id,
+        { name: name.trim(), address: address.trim(), description: description.trim() || null },
+        note.trim() || undefined,
+      );
+      onDone();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not submit the edit.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-app bg-surface p-3">
+      <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} />
+      <Input label="Address" value={address} onChange={(e) => setAddress(e.target.value)} maxLength={300} />
+      <Input
+        label="Description"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        maxLength={2000}
+      />
+      <Input
+        label="Why this change? (optional)"
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        maxLength={1000}
+        hint="Shown to the admin reviewing your suggestion."
+      />
+      {error && <p className="text-sm text-red-500">{error}</p>}
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" size="sm" disabled={busy} onClick={onDone}>
+          Cancel
+        </Button>
+        <Button size="sm" loading={busy} onClick={() => void submit()}>
+          Submit for approval
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function MyContributionsSection() {
+  const { user } = useAuth();
+  const userId = user?.id ?? '';
+  const [editing, setEditing] = useState<string | null>(null);
+  const qc = useQueryClient();
+
+  const reviews = useQuery({
+    queryKey: ['mine', 'reviews', userId],
+    queryFn: () => myReviews(userId),
+    enabled: userId !== '',
+  });
+  const bathrooms = useQuery({
+    queryKey: ['mine', 'bathrooms', userId],
+    queryFn: () => myBathrooms(userId),
+    enabled: userId !== '',
+  });
+  const edits = useQuery({
+    queryKey: ['mine', 'editRequests'],
+    queryFn: myEditRequests,
+    enabled: userId !== '',
+  });
+
+  const editByBathroom = new Map(
+    (edits.data ?? []).map((e) => [e.bathroom_id, e] as const),
+  );
+
+  const hasAny =
+    (reviews.data?.length ?? 0) > 0 || (bathrooms.data?.length ?? 0) > 0;
+  if (!hasAny) return null;
+
+  return (
+    <section className="mt-8 flex flex-col gap-4">
+      <div>
+        <h2 className="text-lg font-semibold text-app">My contributions</h2>
+        <p className="text-sm text-muted">
+          Your reviews are always yours to edit or delete from the bathroom page.
+          Bathrooms you added can only be changed with admin approval — suggest an
+          edit below.
+        </p>
+      </div>
+
+      {(bathrooms.data?.length ?? 0) > 0 && (
+        <div className="flex flex-col gap-2">
+          <h3 className="text-sm font-semibold text-app">Bathrooms I added</h3>
+          <ul className="flex flex-col gap-2">
+            {bathrooms.data!.map((b) => {
+              const req = editByBathroom.get(b.id);
+              return (
+                <li key={b.id} className="flex flex-col gap-2 rounded-xl border border-app bg-raised p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <Link to={`/bathrooms/${b.id}`} className="text-sm font-medium text-app hover:underline">
+                      {b.name}
+                    </Link>
+                    <span className="flex items-center gap-1.5">
+                      {req?.status === 'open' && (
+                        <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600">
+                          Edit pending approval
+                        </span>
+                      )}
+                      {req?.status === 'approved' && (
+                        <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-600">
+                          Edit approved
+                        </span>
+                      )}
+                      {req?.status === 'rejected' && (
+                        <span
+                          className="rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-500"
+                          title={req.decision_note ?? undefined}
+                        >
+                          Edit rejected
+                        </span>
+                      )}
+                      {req?.status !== 'open' && !b.deleted_at && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditing(editing === b.id ? null : b.id)}
+                        >
+                          Suggest an edit
+                        </Button>
+                      )}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted">{b.address}</p>
+                  {req?.status === 'rejected' && req.decision_note && (
+                    <p className="text-xs text-red-500">Admin: {req.decision_note}</p>
+                  )}
+                  {editing === b.id && (
+                    <SuggestEditForm
+                      b={b}
+                      onDone={() => {
+                        setEditing(null);
+                        void qc.invalidateQueries({ queryKey: ['mine', 'editRequests'] });
+                      }}
+                    />
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {(reviews.data?.length ?? 0) > 0 && (
+        <div className="flex flex-col gap-2">
+          <h3 className="text-sm font-semibold text-app">My reviews</h3>
+          <ul className="flex flex-col gap-1.5">
+            {reviews.data!.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-app bg-raised px-3 py-2">
+                <Link
+                  to={`/bathrooms/${r.bathroom_id}`}
+                  className="text-sm font-medium text-app hover:underline"
+                >
+                  {r.bathroom?.name ?? 'Bathroom'}
+                </Link>
+                <span className="text-xs text-muted">
+                  {r.rating}/5 · {new Date(r.created_at).toLocaleDateString()}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function RemovedContentSection() {
   const { user } = useAuth();
   const { data } = useQuery({
@@ -459,6 +647,8 @@ export function ProfilePage() {
           </div>
         )}
       </section>
+
+      <MyContributionsSection />
 
       <RemovedContentSection />
     </div>
