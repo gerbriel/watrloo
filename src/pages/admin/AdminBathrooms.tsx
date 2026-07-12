@@ -6,7 +6,10 @@ import {
   restoreBathroom,
   softDeleteBathroom,
 } from '@/lib/api/moderation';
+import { hardDeleteBathroom } from '@/lib/api/appeals';
 import { updateBathroom } from '@/lib/api/bathrooms';
+import { geocodeAddress, GEOCODE_ATTRIBUTION } from '@/lib/geocode';
+import type { GeocodeCandidate } from '@/lib/geocode';
 import { queryKeys } from '@/lib/queryClient';
 import { AMENITY_KEYS, AMENITY_LABELS } from '@/types/db';
 import type { Amenities, Bathroom, NewBathroom } from '@/types/db';
@@ -29,6 +32,18 @@ function AdminBathroomRow({ b, onChanged }: { b: Bathroom; onChanged: () => void
     requires_key: b.requires_key,
   });
 
+  // Staged pin move from "Re-locate from address"; null = keep b.lat/b.lng.
+  const [staged, setStaged] = useState<{ lat: number; lng: number } | null>(null);
+  const [candidates, setCandidates] = useState<GeocodeCandidate[]>([]);
+  const [geocoding, setGeocoding] = useState(false);
+  const [geocodeMsg, setGeocodeMsg] = useState<string | null>(null);
+
+  function resetLocationEdit() {
+    setStaged(null);
+    setCandidates([]);
+    setGeocodeMsg(null);
+  }
+
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);
     setError(null);
@@ -46,15 +61,51 @@ function AdminBathroomRow({ b, onChanged }: { b: Bathroom; onChanged: () => void
     const patch: NewBathroom = {
       name: name.trim(),
       address: address.trim(),
-      lat: b.lat,
-      lng: b.lng,
+      lat: staged?.lat ?? b.lat,
+      lng: staged?.lng ?? b.lng,
       description: description.trim() || null,
       ...amenities,
     };
     await run(async () => {
       await updateBathroom(b.id, patch);
       setEditing(false);
+      resetLocationEdit();
     });
+  }
+
+  async function relocate() {
+    setGeocoding(true);
+    setGeocodeMsg(null);
+    setCandidates([]);
+    try {
+      const found = await geocodeAddress(address);
+      if (found.length === 0) {
+        setGeocodeMsg('No matches for that address — edit it and try again.');
+      } else if (found.length === 1) {
+        setStaged({ lat: found[0].lat, lng: found[0].lng });
+      } else {
+        setCandidates(found);
+      }
+    } finally {
+      setGeocoding(false);
+    }
+  }
+
+  function removeWithReason() {
+    const reason = window.prompt('Reason shown to the owner (they can appeal):');
+    if (reason === null) return;
+    void run(() => softDeleteBathroom(b.id, reason.trim() || undefined));
+  }
+
+  function deleteForever() {
+    const ok = window.confirm(
+      'Permanently deletes this bathroom AND its reviews, photos, claims, placements, and any ad campaigns pinned to it. This cannot be undone or appealed.',
+    );
+    if (!ok) return;
+    if (window.prompt('Type DELETE to confirm') !== 'DELETE') return;
+    const reason = window.prompt('Reason (optional):');
+    if (reason === null) return;
+    void run(() => hardDeleteBathroom(b.id, reason.trim() || undefined));
   }
 
   return (
@@ -101,9 +152,44 @@ function AdminBathroomRow({ b, onChanged }: { b: Bathroom; onChanged: () => void
               />
             ))}
           </fieldset>
-          <p className="text-xs text-muted">
-            Location isn't edited here — remove and re-add if the pin is wrong.
-          </p>
+          <div className="flex flex-col gap-1">
+            <div>
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={geocoding}
+                disabled={busy}
+                onClick={() => void relocate()}
+              >
+                Re-locate from address
+              </Button>
+            </div>
+            {candidates.length > 0 && (
+              <ul className="flex flex-col gap-1 rounded-lg border border-app p-2">
+                {candidates.map((c) => (
+                  <li key={`${c.lat},${c.lng}`}>
+                    <button
+                      type="button"
+                      className="w-full rounded px-2 py-1 text-left text-xs text-app hover:bg-black/5 dark:hover:bg-white/10"
+                      onClick={() => {
+                        setStaged({ lat: c.lat, lng: c.lng });
+                        setCandidates([]);
+                      }}
+                    >
+                      {c.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {staged && (
+              <p className="text-xs text-muted">
+                pin will move to {staged.lat.toFixed(5)}, {staged.lng.toFixed(5)}
+              </p>
+            )}
+            {geocodeMsg && <p className="text-xs text-red-500">{geocodeMsg}</p>}
+            <p className="text-[11px] text-muted">{GEOCODE_ATTRIBUTION}</p>
+          </div>
         </div>
       ) : (
         <p className="text-sm text-muted">{b.address}</p>
@@ -121,6 +207,7 @@ function AdminBathroomRow({ b, onChanged }: { b: Bathroom; onChanged: () => void
               onClick={() => {
                 setEditing(false);
                 setError(null);
+                resetLocationEdit();
               }}
             >
               Cancel
@@ -149,11 +236,14 @@ function AdminBathroomRow({ b, onChanged }: { b: Bathroom; onChanged: () => void
                 size="sm"
                 className="text-red-500 hover:bg-red-500/10"
                 loading={busy}
-                onClick={() => void run(() => softDeleteBathroom(b.id))}
+                onClick={removeWithReason}
               >
                 Remove
               </Button>
             )}
+            <Button variant="danger" size="sm" loading={busy} onClick={deleteForever}>
+              Delete forever
+            </Button>
           </>
         )}
       </div>

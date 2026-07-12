@@ -71,6 +71,8 @@ export function AdminLayout() {
         )}
         {isAdmin && (
           <TabGroup label="System">
+            <Tab to="/admin/users" label="Users" />
+            <Tab to="/admin/orgs" label="Orgs" />
             <Tab to="/admin/audit" label="Audit" />
             <Tab to="/admin/ops" label="Ops" />
             <Tab to="/admin/roles" label="Roles" />

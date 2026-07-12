@@ -1,16 +1,25 @@
 import { useNavigate } from 'react-router-dom';
-import type { NewBathroom } from '@/types/db';
 import { createBathroom } from '@/lib/api/bathrooms';
+import { setBathroomAttributes } from '@/lib/api/attributes';
 import { useAuth } from '@/auth/AuthProvider';
 import { BathroomForm } from '@/components/bathroom/BathroomForm';
+import type { BathroomFormSubmit } from '@/components/bathroom/BathroomForm';
 
 export function NewBathroomPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  async function handleSubmit(input: NewBathroom) {
+  async function handleSubmit({ bathroom, attributeSlugs }: BathroomFormSubmit) {
     if (!user) throw new Error('You must be signed in to add a bathroom.');
-    const created = await createBathroom(input, user.id);
+    const created = await createBathroom(bathroom, user.id);
+    if (attributeSlugs.length > 0) {
+      try {
+        await setBathroomAttributes(created.id, attributeSlugs);
+      } catch {
+        // Non-fatal: the bathroom exists; attributes can be added later from
+        // its page. Don't fail the whole flow over the tags.
+      }
+    }
     navigate(`/bathrooms/${created.id}`);
   }
 

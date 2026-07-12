@@ -84,9 +84,11 @@ export function AdminReports() {
   const invalidate = () => qc.invalidateQueries({ queryKey: queryKeys.reports('open') });
 
   const removeContent = useMutation({
-    mutationFn: async (r: ReportWithTarget) => {
-      if (r.review) await softDeleteReview(r.review.id);
-      else if (r.bathroom) await softDeleteBathroom(r.bathroom.id);
+    // The reason travels to the owner's "removed content" view, where they can
+    // appeal — so removals from this queue always carry one.
+    mutationFn: async ({ r, reason }: { r: ReportWithTarget; reason: string }) => {
+      if (r.review) await softDeleteReview(r.review.id, reason || undefined);
+      else if (r.bathroom) await softDeleteBathroom(r.bathroom.id, reason || undefined);
       await resolveReport(r.id, false);
     },
     onSuccess: invalidate,
@@ -126,7 +128,7 @@ export function AdminReports() {
       {data.map((r) => {
         const targetGone = (r.review?.deleted_at ?? r.bathroom?.deleted_at) != null;
         const busy =
-          (removeContent.isPending && removeContent.variables?.id === r.id) ||
+          (removeContent.isPending && removeContent.variables?.r.id === r.id) ||
           (dismiss.isPending && dismiss.variables?.id === r.id);
         return (
           <li
@@ -161,8 +163,14 @@ export function AdminReports() {
                 variant="danger"
                 size="sm"
                 disabled={busy || targetGone}
-                loading={removeContent.isPending && removeContent.variables?.id === r.id}
-                onClick={() => removeContent.mutate(r)}
+                loading={removeContent.isPending && removeContent.variables?.r.id === r.id}
+                onClick={() => {
+                  const reason = window.prompt(
+                    'Reason shown to the owner (they can appeal):',
+                  );
+                  if (reason === null) return;
+                  removeContent.mutate({ r, reason: reason.trim() });
+                }}
               >
                 {targetGone ? 'Already removed' : 'Remove content'}
               </Button>

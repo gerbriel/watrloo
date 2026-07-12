@@ -30,6 +30,8 @@ import { AdminAudit } from '@/pages/admin/AdminAudit';
 import { AdminOps } from '@/pages/admin/AdminOps';
 import { AdminAppeals } from '@/pages/admin/AdminAppeals';
 import { AdminAttributes } from '@/pages/admin/AdminAttributes';
+import { AdminUsers } from '@/pages/admin/AdminUsers';
+import { AdminOrgs } from '@/pages/admin/AdminOrgs';
 import { ForBusiness } from '@/pages/ForBusiness';
 import { RequestAccess } from '@/pages/RequestAccess';
 import { BusinessDashboard } from '@/pages/business/BusinessDashboard';
@@ -223,6 +225,22 @@ export const router = createBrowserRouter([
             element: (
               <RequireRole role="admin">
                 <AdminTrust />
+              </RequireRole>
+            ),
+          },
+          {
+            path: 'users',
+            element: (
+              <RequireRole role="admin">
+                <AdminUsers />
+              </RequireRole>
+            ),
+          },
+          {
+            path: 'orgs',
+            element: (
+              <RequireRole role="admin">
+                <AdminOrgs />
               </RequireRole>
             ),
           },
