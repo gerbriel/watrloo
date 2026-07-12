@@ -2,6 +2,9 @@ import { supabase } from '@/lib/supabase';
 import type { BusinessAccessRequest, NewAccessRequest, AccessRequestStatus } from '@/types/db';
 import { sanitizeLine, sanitizeOptional } from '@/lib/sanitize';
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * File a "request business access" form. Works with or without an account:
  * `userId` is null for anonymous submissions (the RLS "anyone can file" policy
@@ -14,12 +17,27 @@ export async function fileAccessRequest(
   input: NewAccessRequest,
   userId: string | null,
 ): Promise<void> {
+  // Existing picks are UUIDs from search results; keep only well-formed ones and
+  // de-dupe. Free-text "not listed yet" entries are sanitized per line.
+  const bathroomIds = Array.from(
+    new Set((input.requested_bathroom_ids ?? []).filter((id) => UUID_RE.test(id))),
+  ).slice(0, 1000);
+  const newLocations = Array.from(
+    new Set(
+      (input.requested_new_locations ?? [])
+        .map((l) => sanitizeLine(l, 200))
+        .filter((l) => l.length > 0),
+    ),
+  ).slice(0, 500);
+
   const clean = {
     business_name: sanitizeLine(input.business_name, 160),
     website: sanitizeOptional(input.website, 300),
     contact_email: sanitizeOptional(input.contact_email, 200),
     message: sanitizeOptional(input.message, 2000),
     locations_note: sanitizeOptional(input.locations_note, 4000),
+    requested_bathroom_ids: bathroomIds,
+    requested_new_locations: newLocations,
   };
   const { error } = await supabase
     .from('business_access_requests')

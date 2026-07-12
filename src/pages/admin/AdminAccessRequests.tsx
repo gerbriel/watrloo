@@ -1,16 +1,68 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   approveAccessRequest,
   listAccessRequests,
   rejectAccessRequest,
 } from '@/lib/api';
+import { getBathroomsByIds } from '@/lib/api/bathrooms';
 import { queryKeys } from '@/lib/queryClient';
 import { Button } from '@/components/ui/Button';
 import type { BusinessAccessRequest } from '@/types/db';
 
 function fmt(iso: string): string {
   return new Date(iso).toLocaleString();
+}
+
+/** The locations the requester picked: existing listings (resolved to names,
+ *  linked) plus the free-text ones they say aren't on Watrloo yet. */
+function RequestedLocations({ request }: { request: BusinessAccessRequest }) {
+  const ids = request.requested_bathroom_ids ?? [];
+  const newOnes = request.requested_new_locations ?? [];
+
+  const { data: existing } = useQuery({
+    queryKey: ['accessRequestBathrooms', request.id, ids.length],
+    queryFn: () => getBathroomsByIds(ids),
+    enabled: ids.length > 0,
+  });
+
+  if (ids.length === 0 && newOnes.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-lg border border-app bg-surface p-3">
+      <p className="text-[0.65rem] font-medium uppercase tracking-wide text-muted">
+        Locations to claim · {ids.length} listed · {newOnes.length} new
+      </p>
+      <ul className="flex flex-wrap gap-1.5">
+        {(existing ?? []).map((b) => (
+          <li key={b.id}>
+            <Link
+              to={`/bathrooms/${b.id}`}
+              className="inline-block rounded-full border border-app bg-raised px-2.5 py-0.5 text-xs text-app hover:border-strong"
+              title={b.address ?? undefined}
+            >
+              {b.name}
+            </Link>
+          </li>
+        ))}
+        {existing == null && ids.length > 0 && (
+          <li className="text-xs text-muted">Loading {ids.length} listing(s)…</li>
+        )}
+        {newOnes.map((l) => (
+          <li
+            key={`new:${l}`}
+            className="inline-flex items-center gap-1 rounded-full border border-dashed border-strong bg-raised px-2.5 py-0.5 text-xs text-app"
+          >
+            <span className="text-[0.6rem] font-medium uppercase tracking-wide text-flush-600">
+              New
+            </span>
+            {l}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 export function AdminAccessRequests() {
@@ -111,6 +163,8 @@ export function AdminAccessRequests() {
               {r.message && (
                 <p className="whitespace-pre-line text-sm text-app">{r.message}</p>
               )}
+
+              <RequestedLocations request={r} />
 
               {r.locations_note && (
                 <p className="whitespace-pre-line text-sm text-muted">

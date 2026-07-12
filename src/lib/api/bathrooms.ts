@@ -116,6 +116,19 @@ export async function listBathrooms(
   return attachStats(stripGeog(data));
 }
 
+/** Resolve a set of bathroom ids to their name/address (order not guaranteed). */
+export async function getBathroomsByIds(
+  ids: string[],
+): Promise<Pick<Bathroom, 'id' | 'name' | 'address'>[]> {
+  if (ids.length === 0) return [];
+  const { data, error } = await supabase
+    .from('bathrooms')
+    .select('id,name,address')
+    .in('id', ids);
+  if (error) throw error;
+  return (data ?? []) as Pick<Bathroom, 'id' | 'name' | 'address'>[];
+}
+
 export async function getBathroom(id: string): Promise<BathroomWithStats | null> {
   const { data, error } = await supabase
     .from('bathrooms')

@@ -238,6 +238,10 @@ export interface BusinessAccessRequest {
   contact_email: string | null;
   message: string | null;
   locations_note: string | null;
+  /** Existing bathrooms the requester picked to claim. */
+  requested_bathroom_ids: Uuid[];
+  /** Free-text locations they say aren't on Watrloo yet. */
+  requested_new_locations: string[];
   status: AccessRequestStatus;
   reviewed_by: Uuid | null;
   reviewed_at: string | null;
@@ -262,6 +266,8 @@ export interface NewAccessRequest {
   contact_email?: string | null;
   message?: string | null;
   locations_note?: string | null;
+  requested_bathroom_ids?: string[];
+  requested_new_locations?: string[];
 }
 
 /** The exact facts a business may edit on a claimed listing (never reviews). */
