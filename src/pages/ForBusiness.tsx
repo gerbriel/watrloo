@@ -131,7 +131,7 @@ interface Tier {
 const TIERS: readonly Tier[] = [
   {
     key: 'solo',
-    name: 'Solo',
+    name: 'Lone Throne',
     price: '$10',
     per: '/mo · $100/yr',
     tagline: 'One location, done right.',
@@ -142,7 +142,7 @@ const TIERS: readonly Tier[] = [
       '1 featured placement / week',
       'Basic analytics · 2 team seats',
     ],
-    showcaseTitle: 'What Solo feels like',
+    showcaseTitle: 'What Lone Throne feels like',
     showcaseBlurb:
       'Claim your spot, perfect the details, and answer your reviewers — the essentials for a single location.',
     previews: [
@@ -153,19 +153,19 @@ const TIERS: readonly Tier[] = [
   },
   {
     key: 'growth',
-    name: 'Growth',
+    name: 'Royal Flush',
     price: '$39',
     per: '/mo · $390/yr',
     tagline: 'A handful of locations, one console.',
     popular: true,
     features: [
       'Up to 5 locations (+$6/extra to 15)',
-      'Everything in Solo',
+      'Everything in Lone Throne',
       '3 featured placements / week',
       'Standard analytics · CSV import',
       '5 team seats · 1 newsletter slot/mo',
     ],
-    showcaseTitle: 'What Growth feels like',
+    showcaseTitle: 'What Royal Flush feels like',
     showcaseBlurb:
       'Run several locations from one dashboard, bring in your team, and see which spots pull their weight.',
     previews: [
@@ -176,18 +176,18 @@ const TIERS: readonly Tier[] = [
   },
   {
     key: 'chain',
-    name: 'Chain',
+    name: 'Porcelain Empire',
     price: '$149',
     per: '/mo · $1,490/yr',
     tagline: 'A fleet at scale.',
     features: [
       'Up to 25 locations (+$4/extra to 100)',
-      'Everything in Growth',
+      'Everything in Royal Flush',
       '3 featured placements / week per location',
       'Advanced analytics · API read access',
       '15 seats · 3 newsletter slots/mo · priority support',
     ],
-    showcaseTitle: 'What Chain feels like',
+    showcaseTitle: 'What Porcelain Empire feels like',
     showcaseBlurb:
       'Import the whole footprint from a CSV, promote every storefront, and keep the brand consistent everywhere.',
     previews: [
@@ -432,7 +432,7 @@ export function ForBusiness() {
 
         <p className="text-sm text-muted">
           Need more than 25 locations, custom limits, or write API access?{' '}
-          <span className="font-medium text-app">Enterprise</span> starts around
+          <span className="font-medium text-app">Grande Armée</span> starts around
           $500/mo —{' '}
           <button
             type="button"

@@ -1,5 +1,10 @@
 # Watrloo — Pricing & Packaging (A9)
 
+> **Display names.** The tiers ship under themed names on the pricing page and
+> in `plans.name`: Solo = **Lone Throne**, Growth = **Royal Flush**, Chain =
+> **Porcelain Empire**, Enterprise = **Grande Armée**. This doc (and the
+> `plans.key` values everywhere in code and SQL) keep the internal names.
+
 **Summary.** Four subscription tiers — **Solo ($10/mo), Growth ($39/mo), Chain
 ($149/mo), Enterprise (custom)** — where a single-location shop gets the *whole*
 toolkit (claim + manage listing, respond to reviews, a modest blast + featured

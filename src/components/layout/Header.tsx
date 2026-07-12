@@ -55,7 +55,7 @@ export function Header() {
             Watrloo
           </span>
           <span className="hidden text-xs font-normal text-muted sm:inline">
-            · find a good throne
+            · earn your stripes on the porcelain front
           </span>
         </Link>
 

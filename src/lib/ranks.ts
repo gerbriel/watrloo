@@ -70,6 +70,18 @@ export const RANKS: readonly Rank[] = [
     motto: 'Every throne in the city answers to you.',
     tier: 'gold',
   },
+  {
+    title: 'The Old Guard',
+    min: 500,
+    motto: 'Beyond rank now. The Guard flushes; it never surrenders.',
+    tier: 'gold',
+  },
+  {
+    title: 'Victor of Watrloo',
+    min: 1000,
+    motto: 'Napoleon lost his. You’ve won a thousand.',
+    tier: 'gold',
+  },
 ];
 
 /** The line that sells the mission, reused wherever ranks appear. */

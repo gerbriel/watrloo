@@ -127,11 +127,13 @@ create policy "plans are public" on public.plans for select using (true);
 drop policy if exists "plan features are public" on public.plan_features;
 create policy "plan features are public" on public.plan_features for select using (true);
 
+-- Display names are themed (see docs/growth/PRICING.md §1); the stable
+-- identifiers are the keys, which the app and RPCs reference exclusively.
 insert into public.plans (key, name, monthly_price_cents) values
-  ('solo',       'Solo',       1000),
-  ('growth',     'Growth',     3900),
-  ('chain',      'Chain',      14900),
-  ('enterprise', 'Enterprise', 50000)
+  ('solo',       'Lone Throne',      1000),
+  ('growth',     'Royal Flush',      3900),
+  ('chain',      'Porcelain Empire', 14900),
+  ('enterprise', 'Grande Armée',     50000)
 on conflict (key) do nothing;
 
 insert into public.plan_features (plan_key, feature, value) values
