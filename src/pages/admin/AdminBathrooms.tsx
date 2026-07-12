@@ -10,6 +10,9 @@ import {
   softDeleteBathroom,
 } from '@/lib/api/moderation';
 import { listAttributeDefs } from '@/lib/api/attributes';
+import { assignBathrooms } from '@/lib/api/moderation';
+import { searchUsers } from '@/lib/api/adminDirectory';
+import { useAuth } from '@/auth/AuthProvider';
 import { hardDeleteBathroom } from '@/lib/api/appeals';
 import { updateBathroom } from '@/lib/api/bathrooms';
 import { geocodeAddress, GEOCODE_ATTRIBUTION } from '@/lib/geocode';
@@ -293,6 +296,13 @@ export function AdminBathrooms() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkMsg, setBulkMsg] = useState<string | null>(null);
   const [bulkSlug, setBulkSlug] = useState('');
+  const [bulkModerator, setBulkModerator] = useState('');
+  const { isAdmin } = useAuth();
+  const moderators = useQuery({
+    queryKey: ['admin', 'users', 'moderators'],
+    queryFn: () => searchUsers({ role: 'moderator', limit: 200 }),
+    enabled: isAdmin,
+  });
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: queryKeys.adminBathrooms() });
@@ -346,6 +356,14 @@ export function AdminBathrooms() {
     void runBulk(async () => {
       const n = await bulkSetAttribute(ids, bulkSlug, add);
       return `${add ? 'Tagged' : 'Untagged'} ${n} bathroom${n === 1 ? '' : 's'}.`;
+    });
+  }
+
+  function bulkAssign(add: boolean) {
+    if (!bulkModerator) return;
+    void runBulk(async () => {
+      const n = await assignBathrooms(bulkModerator, ids, add);
+      return `${add ? 'Assigned' : 'Unassigned'} ${n} bathroom${n === 1 ? '' : 's'}.`;
     });
   }
 
@@ -448,6 +466,31 @@ export function AdminBathrooms() {
               Remove tag
             </Button>
           </span>
+          {isAdmin && (
+            <span className="flex items-center gap-1">
+              <select
+                value={bulkModerator}
+                onChange={(e) => setBulkModerator(e.target.value)}
+                aria-label="Moderator to assign"
+                className="h-8 rounded-lg border border-app bg-surface px-2 text-xs text-app"
+              >
+                <option value="">Assign to…</option>
+                {(moderators.data ?? []).map((m) => (
+                  <option key={m.user_id} value={m.user_id}>
+                    @{m.username}
+                  </option>
+                ))}
+              </select>
+              <Button variant="secondary" size="sm" disabled={bulkBusy || !bulkModerator}
+                onClick={() => bulkAssign(true)}>
+                Assign
+              </Button>
+              <Button variant="ghost" size="sm" disabled={bulkBusy || !bulkModerator}
+                onClick={() => bulkAssign(false)}>
+                Unassign
+              </Button>
+            </span>
+          )}
           <Button variant="danger" size="sm" loading={bulkBusy} onClick={bulkHardDelete}>
             Delete forever
           </Button>

@@ -1,6 +1,18 @@
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate, useOutletContext } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
 import { cn } from '@/lib/cn';
+
+/** Child pages read the effective view (an admin can work in moderator view). */
+export interface AdminViewContext {
+  viewAsAdmin: boolean;
+}
+
+export function useAdminView(): AdminViewContext {
+  return useOutletContext<AdminViewContext>();
+}
+
+const VIEW_KEY = 'wl_admin_view';
 
 /**
  * The control room shell. Desktop: a fixed left sidebar with grouped links
@@ -29,6 +41,7 @@ const GROUPS: NavGroup[] = [
     label: 'Moderation',
     items: [
       { to: '/admin', label: 'Home' },
+      { to: '/admin/assignments', label: 'My bathrooms' },
       { to: '/admin/reports', label: 'Reports' },
       { to: '/admin/reviews', label: 'Reviews' },
       { to: '/admin/bathrooms', label: 'Bathrooms' },
@@ -75,18 +88,76 @@ export function AdminLayout() {
   const { isAdmin, profile } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const groups = visibleGroups(isAdmin);
+  // An admin who also moderates can flip into the focused moderator view; the
+  // choice sticks for the tab session. Pure presentation — the server gates
+  // every action by real role either way.
+  const [view, setView] = useState<'admin' | 'moderator'>(() => {
+    try {
+      return sessionStorage.getItem(VIEW_KEY) === 'moderator' ? 'moderator' : 'admin';
+    } catch {
+      return 'admin';
+    }
+  });
+  const viewAsAdmin = isAdmin && view === 'admin';
+  const groups = visibleGroups(viewAsAdmin);
+
+  function switchView(next: 'admin' | 'moderator') {
+    setView(next);
+    try {
+      sessionStorage.setItem(VIEW_KEY, next);
+    } catch {
+      /* best effort */
+    }
+    // Leaving admin view while on an admin-only console would 404-ish; go home.
+    navigate('/admin');
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold text-app">
-          {isAdmin ? 'Control room' : 'Moderator panel'}
-        </h1>
-        <p className="text-sm text-muted">
-          Signed in as @{profile?.username ?? '…'}. Every removal, restore,
-          setting change, and role change here is written to the audit log.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-bold text-app">
+            {viewAsAdmin ? 'Control room' : 'Moderator panel'}
+          </h1>
+          <p className="text-sm text-muted">
+            Signed in as @{profile?.username ?? '…'}. Every removal, restore,
+            setting change, and role change here is written to the audit log.
+          </p>
+        </div>
+        {isAdmin && (
+          <div
+            role="group"
+            aria-label="Switch view"
+            className="flex overflow-hidden rounded-lg border border-app text-xs font-medium"
+          >
+            <button
+              type="button"
+              aria-pressed={view === 'admin'}
+              onClick={() => switchView('admin')}
+              className={cn(
+                'px-3 py-1.5 transition-colors',
+                view === 'admin'
+                  ? 'bg-flush-600 text-white'
+                  : 'bg-surface text-muted hover:text-app',
+              )}
+            >
+              Admin
+            </button>
+            <button
+              type="button"
+              aria-pressed={view === 'moderator'}
+              onClick={() => switchView('moderator')}
+              className={cn(
+                'px-3 py-1.5 transition-colors',
+                view === 'moderator'
+                  ? 'bg-flush-600 text-white'
+                  : 'bg-surface text-muted hover:text-app',
+              )}
+            >
+              Moderator
+            </button>
+          </div>
+        )}
       </header>
 
       {/* Small screens: one native switcher, zero overflow. */}
@@ -145,7 +216,7 @@ export function AdminLayout() {
         </nav>
 
         <div className="min-w-0 flex-1">
-          <Outlet />
+          <Outlet context={{ viewAsAdmin } satisfies AdminViewContext} />
         </div>
       </div>
     </div>

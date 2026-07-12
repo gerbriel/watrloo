@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthProvider';
+import { useAdminView } from '@/pages/admin/AdminLayout';
+import { myAssignedBathrooms } from '@/lib/api/moderation';
 import { cn } from '@/lib/cn';
 
 /**
@@ -61,7 +63,14 @@ function QueueTile({
 }
 
 export function AdminHome() {
-  const { isAdmin } = useAuth();
+  const { isAdmin: isRealAdmin } = useAuth();
+  const { viewAsAdmin } = useAdminView();
+  const isAdmin = isRealAdmin && viewAsAdmin;
+
+  const assigned = useQuery({
+    queryKey: ['assigned', 'bathrooms'],
+    queryFn: myAssignedBathrooms,
+  });
 
   const counts = useQuery({
     queryKey: ['admin', 'home', isAdmin],
@@ -104,6 +113,12 @@ export function AdminHome() {
       )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <QueueTile
+          to="/admin/assignments"
+          label="My bathrooms"
+          count={assigned.data?.length}
+          blurb="Assigned to you, with their reviews and reports"
+        />
         <QueueTile
           to="/admin/reports"
           label="Open reports"

@@ -161,3 +161,38 @@ export async function bulkSetAttribute(
   if (error) throw error;
   return (data as number) ?? 0;
 }
+
+// --- Moderator assignments ----------------------------------------------------
+
+export interface AssignedBathroom {
+  bathroom_id: string;
+  name: string;
+  address: string;
+  deleted_at: string | null;
+  assigned_at: string;
+  review_count: number;
+  removed_reviews: number;
+  open_reports: number;
+}
+
+/** The signed-in moderator's worklist, hottest (most open reports) first. */
+export async function myAssignedBathrooms(): Promise<AssignedBathroom[]> {
+  const { data, error } = await supabase.rpc('my_assigned_bathrooms');
+  if (error) throw error;
+  return (data ?? []) as AssignedBathroom[];
+}
+
+/** Admin: assign or unassign a batch of bathrooms to one moderator. */
+export async function assignBathrooms(
+  moderatorId: string,
+  bathroomIds: string[],
+  add: boolean,
+): Promise<number> {
+  const { data, error } = await supabase.rpc('admin_assign_bathrooms', {
+    p_moderator_id: moderatorId,
+    p_bathroom_ids: bathroomIds,
+    p_add: add,
+  });
+  if (error) throw error;
+  return (data as number) ?? 0;
+}
