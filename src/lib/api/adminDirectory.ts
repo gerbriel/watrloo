@@ -77,3 +77,43 @@ export async function bulkSetRole(
   if (error) throw error;
   return (data as number) ?? 0;
 }
+
+/** Admin: create an org outright (owner optional — assign later by username). */
+export async function createOrg(opts: {
+  name: string;
+  website?: string;
+  ownerId?: string;
+  plan?: string;
+}): Promise<string> {
+  const { data, error } = await supabase.rpc('admin_create_business', {
+    p_name: opts.name,
+    p_website: opts.website ?? null,
+    p_owner_id: opts.ownerId ?? null,
+    p_plan: opts.plan ?? 'solo',
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+/** Admin: permanently delete an org (cascades members, claims, campaigns…). */
+export async function deleteOrg(businessId: string, reason?: string): Promise<void> {
+  const { error } = await supabase.rpc('admin_delete_business', {
+    p_business_id: businessId,
+    p_reason: reason ?? null,
+  });
+  if (error) throw error;
+}
+
+/** Admin: set a user's org role ('owner'|'manager'|'staff') or null to remove. */
+export async function setOrgMember(
+  businessId: string,
+  userId: string,
+  role: 'owner' | 'manager' | 'staff' | null,
+): Promise<void> {
+  const { error } = await supabase.rpc('admin_set_org_member', {
+    p_business_id: businessId,
+    p_user_id: userId,
+    p_role: role,
+  });
+  if (error) throw error;
+}

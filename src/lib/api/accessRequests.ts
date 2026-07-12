@@ -54,7 +54,7 @@ export async function countOpenAccessRequests(): Promise<number> {
 /** Admin: approve a request. Creates the business + owner + subscription. */
 export async function approveAccessRequest(
   requestId: string,
-  plan = 'standard',
+  plan = 'solo',
 ): Promise<string> {
   const { data, error } = await supabase.rpc('admin_approve_access_request', {
     p_request_id: requestId,

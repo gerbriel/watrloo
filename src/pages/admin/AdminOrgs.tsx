@@ -3,8 +3,9 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import type { Business } from '@/types/db';
-import { listOrgs } from '@/lib/api/adminDirectory';
+import { createOrg, deleteOrg, listOrgs, searchUsers, setOrgMember } from '@/lib/api/adminDirectory';
 import type { DirectoryOrg } from '@/lib/api/adminDirectory';
+import { getProfileByUsername } from '@/lib/api/profiles';
 import { suspendBusiness } from '@/lib/api/growth';
 import { updateBusinessProfile } from '@/lib/api/businesses';
 import { Button } from '@/components/ui/Button';
@@ -220,6 +221,225 @@ function quickLink(to: string, label: string, title?: string) {
   );
 }
 
+/** Admin member management: list via the admin user directory, mutate via
+ *  the audited admin_set_org_member RPC. */
+function MembersPanel({ org }: { org: DirectoryOrg }) {
+  const qc = useQueryClient();
+  const [username, setUsername] = useState('');
+  const [role, setRole] = useState<'owner' | 'manager' | 'staff'>('manager');
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const members = useQuery({
+    queryKey: ['admin', 'orgMembers', org.id],
+    queryFn: () => searchUsers({ businessId: org.id, limit: 200 }),
+  });
+
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey: ['admin', 'orgMembers', org.id] });
+    void qc.invalidateQueries({ queryKey: ORGS_KEY });
+  };
+
+  const mutate = useMutation({
+    mutationFn: async ({
+      userId,
+      nextRole,
+    }: {
+      userId: string;
+      nextRole: 'owner' | 'manager' | 'staff' | null;
+    }) => setOrgMember(org.id, userId, nextRole),
+    onSuccess: () => {
+      setMsg(null);
+      invalidate();
+    },
+    onError: (e) => setMsg(errMsg(e, 'Could not update membership.')),
+  });
+
+  async function addByUsername() {
+    setMsg(null);
+    const u = username.trim();
+    if (!u) return;
+    const profile = await getProfileByUsername(u).catch(() => null);
+    if (!profile) {
+      setMsg(`No account named @${u} — they need to sign up first, then add them here.`);
+      return;
+    }
+    mutate.mutate({ userId: profile.id, nextRole: role });
+    setUsername('');
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-app bg-surface p-3">
+      <p className="text-sm font-medium text-app">Members</p>
+
+      {members.isPending && <p className="text-sm text-muted">Loading members…</p>}
+      {members.isError && (
+        <p className="text-sm text-red-500">
+          {errMsg(members.error, 'Could not load members.')}
+        </p>
+      )}
+      {members.data && members.data.length === 0 && (
+        <p className="text-sm text-muted">
+          No members yet — this org is ownerless until you assign someone.
+        </p>
+      )}
+      {members.data && members.data.length > 0 && (
+        <ul className="flex flex-col gap-2">
+          {members.data.map((m) => {
+            const membership = m.businesses.find((b) => b.id === org.id);
+            const busy = mutate.isPending && mutate.variables?.userId === m.user_id;
+            return (
+              <li key={m.user_id} className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm text-app">
+                  <span className="font-medium">@{m.username}</span>{' '}
+                  <span className="text-xs text-muted">· {membership?.role ?? '?'}</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <select
+                    value={membership?.role ?? 'staff'}
+                    onChange={(e) =>
+                      mutate.mutate({
+                        userId: m.user_id,
+                        nextRole: e.target.value as 'owner' | 'manager' | 'staff',
+                      })
+                    }
+                    disabled={busy}
+                    aria-label={`Role for @${m.username}`}
+                    className="h-8 rounded-lg border border-app bg-surface px-2 text-xs text-app"
+                  >
+                    <option value="owner">owner</option>
+                    <option value="manager">manager</option>
+                    <option value="staff">staff</option>
+                  </select>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-500 hover:bg-red-500/10"
+                    loading={busy}
+                    onClick={() => {
+                      if (window.confirm(`Remove @${m.username} from ${org.name}?`)) {
+                        mutate.mutate({ userId: m.user_id, nextRole: null });
+                      }
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <div className="flex flex-wrap items-end gap-2 border-t border-app pt-3">
+        <div className="min-w-40 flex-1">
+          <Input
+            label="Add by username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="username"
+          />
+        </div>
+        <select
+          value={role}
+          onChange={(e) => setRole(e.target.value as 'owner' | 'manager' | 'staff')}
+          aria-label="Role for new member"
+          className="h-10 rounded-lg border border-app bg-surface px-2 text-sm text-app"
+        >
+          <option value="owner">owner</option>
+          <option value="manager">manager</option>
+          <option value="staff">staff</option>
+        </select>
+        <Button
+          variant="secondary"
+          size="sm"
+          loading={mutate.isPending}
+          disabled={!username.trim()}
+          onClick={() => void addByUsername()}
+        >
+          Add
+        </Button>
+      </div>
+      {msg && <p className="text-sm text-red-500">{msg}</p>}
+    </div>
+  );
+}
+
+/** Create an org outright — for phone/email requests that never used the form. */
+function NewOrgForm({ onCreated }: { onCreated: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [website, setWebsite] = useState('');
+  const [owner, setOwner] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    setError(null);
+    if (!name.trim()) {
+      setError('Name is required.');
+      return;
+    }
+    setBusy(true);
+    try {
+      let ownerId: string | undefined;
+      if (owner.trim()) {
+        const profile = await getProfileByUsername(owner.trim()).catch(() => null);
+        if (!profile) {
+          setError(
+            `No account named @${owner.trim()} — they need to sign up first. ` +
+              'You can create the org without an owner and assign them later.',
+          );
+          setBusy(false);
+          return;
+        }
+        ownerId = profile.id;
+      }
+      await createOrg({ name: name.trim(), website: website.trim() || undefined, ownerId });
+      setName('');
+      setWebsite('');
+      setOwner('');
+      setOpen(false);
+      onCreated();
+    } catch (e: unknown) {
+      setError(errMsg(e, 'Could not create the org.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <Button variant="secondary" size="sm" onClick={() => setOpen(true)} className="w-fit">
+        New org
+      </Button>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-app bg-raised p-4">
+      <p className="text-sm font-medium text-app">Create an org</p>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} maxLength={160} />
+        <Input label="Website" type="url" value={website} onChange={(e) => setWebsite(e.target.value)} />
+        <Input
+          label="Owner username (optional)"
+          value={owner}
+          onChange={(e) => setOwner(e.target.value)}
+          hint="Leave blank to assign later."
+        />
+      </div>
+      {error && <p className="text-sm text-red-500">{error}</p>}
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" size="sm" disabled={busy} onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+        <Button size="sm" loading={busy} onClick={() => void submit()}>
+          Create
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function OrgCard({
   org,
   suspendBusy,
@@ -328,14 +548,39 @@ function OrgCard({
       </div>
 
       {expanded && (
-        <EditForm
-          org={org}
-          onSaved={() => {
-            void qc.invalidateQueries({ queryKey: ORGS_KEY });
-            setExpanded(false);
-          }}
-          onCancel={() => setExpanded(false)}
-        />
+        <div className="flex flex-col gap-3">
+          <EditForm
+            org={org}
+            onSaved={() => {
+              void qc.invalidateQueries({ queryKey: ORGS_KEY });
+              setExpanded(false);
+            }}
+            onCancel={() => setExpanded(false)}
+          />
+          <MembersPanel org={org} />
+          <div className="flex justify-end">
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    `PERMANENTLY delete ${org.name}? Members, subscription, claims, campaigns, and placements all go with it. This cannot be undone.`,
+                  )
+                )
+                  return;
+                if (window.prompt('Type DELETE to confirm') !== 'DELETE') return;
+                const reason = window.prompt('Reason (optional):');
+                if (reason === null) return;
+                void deleteOrg(org.id, reason.trim() || undefined).then(() => {
+                  void qc.invalidateQueries({ queryKey: ORGS_KEY });
+                });
+              }}
+            >
+              Delete org forever
+            </Button>
+          </div>
+        </div>
       )}
     </li>
   );
@@ -414,6 +659,8 @@ export function AdminOrgs() {
         aria-label="Search orgs by name"
         className="w-full max-w-sm rounded-lg border border-app bg-surface px-3 py-2 text-sm text-app placeholder:text-muted"
       />
+
+      <NewOrgForm onCreated={() => void qc.invalidateQueries({ queryKey: ORGS_KEY })} />
 
       {isPending && <p className="text-sm text-muted">Loading orgs…</p>}
 

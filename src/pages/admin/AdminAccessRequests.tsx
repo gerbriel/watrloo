@@ -101,6 +101,13 @@ export function AdminAccessRequests() {
                 <p className="text-sm text-app">{r.contact_email}</p>
               )}
 
+              {r.requester_id == null && (
+                <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-600">
+                  No account attached — approving creates the org without an
+                  owner. Once they sign up, assign them from Manage Orgs.
+                </p>
+              )}
+
               {r.message && (
                 <p className="whitespace-pre-line text-sm text-app">{r.message}</p>
               )}
