@@ -2,10 +2,14 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
+  bulkRestoreBathrooms,
+  bulkSetAttribute,
+  bulkSoftDeleteBathrooms,
   listBathroomsForModeration,
   restoreBathroom,
   softDeleteBathroom,
 } from '@/lib/api/moderation';
+import { listAttributeDefs } from '@/lib/api/attributes';
 import { hardDeleteBathroom } from '@/lib/api/appeals';
 import { updateBathroom } from '@/lib/api/bathrooms';
 import { geocodeAddress, GEOCODE_ATTRIBUTION } from '@/lib/geocode';
@@ -16,7 +20,17 @@ import type { Amenities, Bathroom, NewBathroom } from '@/types/db';
 import { Button } from '@/components/ui/Button';
 import { Input, Textarea, Checkbox } from '@/components/ui/Field';
 
-function AdminBathroomRow({ b, onChanged }: { b: Bathroom; onChanged: () => void }) {
+function AdminBathroomRow({
+  b,
+  onChanged,
+  selected,
+  onToggleSelect,
+}: {
+  b: Bathroom;
+  onChanged: () => void;
+  selected: boolean;
+  onToggleSelect: () => void;
+}) {
   const removed = b.deleted_at != null;
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -109,14 +123,27 @@ function AdminBathroomRow({ b, onChanged }: { b: Bathroom; onChanged: () => void
   }
 
   return (
-    <li className="flex flex-col gap-3 rounded-xl border border-app bg-raised p-4">
+    <li
+      className={`flex flex-col gap-3 rounded-xl border bg-raised p-4 ${
+        selected ? 'border-flush-500' : 'border-app'
+      }`}
+    >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <Link
-          to={`/bathrooms/${b.id}`}
-          className="font-medium text-app hover:underline"
-        >
-          {b.name}
-        </Link>
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelect}
+            aria-label={`Select ${b.name}`}
+            className="size-4 accent-flush-600"
+          />
+          <Link
+            to={`/bathrooms/${b.id}`}
+            className="font-medium text-app hover:underline"
+          >
+            {b.name}
+          </Link>
+        </div>
         {removed && (
           <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-500">
             Removed
@@ -257,11 +284,97 @@ export function AdminBathrooms() {
     queryKey: queryKeys.adminBathrooms(),
     queryFn: () => listBathroomsForModeration(100),
   });
+  const attrDefs = useQuery({
+    queryKey: ['attributeDefs', true],
+    queryFn: () => listAttributeDefs(true),
+  });
+
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkMsg, setBulkMsg] = useState<string | null>(null);
+  const [bulkSlug, setBulkSlug] = useState('');
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: queryKeys.adminBathrooms() });
     void qc.invalidateQueries({ queryKey: ['bathrooms'] });
   };
+
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const ids = [...selected];
+
+  async function runBulk(fn: () => Promise<string>) {
+    setBulkBusy(true);
+    setBulkMsg(null);
+    try {
+      setBulkMsg(await fn());
+      setSelected(new Set());
+      invalidate();
+    } catch (err: unknown) {
+      setBulkMsg(err instanceof Error ? err.message : 'Bulk action failed.');
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  function bulkRemove() {
+    const reason = window.prompt(
+      `Reason shown to the owners of these ${ids.length} bathrooms (they can appeal):`,
+    );
+    if (reason === null) return;
+    void runBulk(async () => {
+      const n = await bulkSoftDeleteBathrooms(ids, reason.trim() || undefined);
+      return `Removed ${n} bathroom${n === 1 ? '' : 's'}.`;
+    });
+  }
+
+  function bulkRestore() {
+    void runBulk(async () => {
+      const n = await bulkRestoreBathrooms(ids);
+      return `Restored ${n} bathroom${n === 1 ? '' : 's'}.`;
+    });
+  }
+
+  function bulkTag(add: boolean) {
+    if (!bulkSlug) return;
+    void runBulk(async () => {
+      const n = await bulkSetAttribute(ids, bulkSlug, add);
+      return `${add ? 'Tagged' : 'Untagged'} ${n} bathroom${n === 1 ? '' : 's'}.`;
+    });
+  }
+
+  function bulkHardDelete() {
+    const ok = window.confirm(
+      `PERMANENTLY delete ${ids.length} bathrooms AND their reviews, photos, claims, placements, and pinned campaigns. This cannot be undone or appealed.`,
+    );
+    if (!ok) return;
+    if (window.prompt('Type DELETE to confirm') !== 'DELETE') return;
+    const reason = window.prompt('Reason (optional):');
+    if (reason === null) return;
+    void runBulk(async () => {
+      let done = 0;
+      const failed: string[] = [];
+      // Sequential on purpose: each delete clears its photo bytes from
+      // storage first, and parallel storage batches can rate-limit.
+      for (const id of ids) {
+        try {
+          await hardDeleteBathroom(id, reason.trim() || undefined);
+          done += 1;
+        } catch {
+          failed.push(id);
+        }
+      }
+      return failed.length === 0
+        ? `Permanently deleted ${done} bathroom${done === 1 ? '' : 's'}.`
+        : `Deleted ${done}; ${failed.length} failed — retry those.`;
+    });
+  }
 
   if (isPending) return <p className="text-sm text-muted">Loading bathrooms…</p>;
   if (isError) {
@@ -277,11 +390,83 @@ export function AdminBathrooms() {
     );
   }
 
+  const defs = attrDefs.data ?? [];
+
   return (
-    <ul className="flex flex-col gap-3">
-      {data.map((b) => (
-        <AdminBathroomRow key={b.id} b={b} onChanged={invalidate} />
-      ))}
-    </ul>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <label className="flex items-center gap-1.5 text-muted">
+          <input
+            type="checkbox"
+            checked={selected.size > 0 && selected.size === data.length}
+            onChange={() =>
+              setSelected(
+                selected.size === data.length
+                  ? new Set()
+                  : new Set(data.map((b) => b.id)),
+              )
+            }
+            aria-label="Select all bathrooms"
+            className="size-4 accent-flush-600"
+          />
+          Select all
+        </label>
+        {selected.size > 0 && (
+          <span className="text-xs text-muted">{selected.size} selected</span>
+        )}
+      </div>
+
+      {selected.size > 0 && (
+        <div className="sticky top-2 z-10 flex flex-wrap items-center gap-2 rounded-xl border border-flush-500/40 bg-raised p-3 shadow-sm">
+          <Button variant="ghost" size="sm" disabled={bulkBusy} onClick={bulkRemove}
+            className="text-red-500 hover:bg-red-500/10">
+            Remove ({selected.size})
+          </Button>
+          <Button variant="secondary" size="sm" disabled={bulkBusy} onClick={bulkRestore}>
+            Restore
+          </Button>
+          <span className="flex items-center gap-1">
+            <select
+              value={bulkSlug}
+              onChange={(e) => setBulkSlug(e.target.value)}
+              aria-label="Attribute to apply"
+              className="h-8 rounded-lg border border-app bg-surface px-2 text-xs text-app"
+            >
+              <option value="">Tag with…</option>
+              {defs.map((d) => (
+                <option key={d.slug} value={d.slug}>
+                  {d.kind}: {d.label}
+                </option>
+              ))}
+            </select>
+            <Button variant="secondary" size="sm" disabled={bulkBusy || !bulkSlug}
+              onClick={() => bulkTag(true)}>
+              Add
+            </Button>
+            <Button variant="ghost" size="sm" disabled={bulkBusy || !bulkSlug}
+              onClick={() => bulkTag(false)}>
+              Remove tag
+            </Button>
+          </span>
+          <Button variant="danger" size="sm" loading={bulkBusy} onClick={bulkHardDelete}>
+            Delete forever
+          </Button>
+        </div>
+      )}
+
+      {bulkMsg && <p className="text-sm text-muted" role="status">{bulkMsg}</p>}
+
+      <ul className="flex flex-col gap-3">
+        {data.map((b) => (
+          <AdminBathroomRow
+            key={b.id}
+            b={b}
+            onChanged={invalidate}
+            selected={selected.has(b.id)}
+            onToggleSelect={() => toggle(b.id)}
+          />
+        ))}
+      </ul>
+    </div>
   );
 }

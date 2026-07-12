@@ -62,3 +62,18 @@ export async function listOrgs(search?: string): Promise<DirectoryOrg[]> {
   if (error) throw error;
   return (data ?? []) as DirectoryOrg[];
 }
+
+/** Mass role grant/revoke. The caller's own admin role is never bulk-revoked. */
+export async function bulkSetRole(
+  userIds: string[],
+  role: 'moderator' | 'admin',
+  grant: boolean,
+): Promise<number> {
+  const { data, error } = await supabase.rpc('admin_bulk_set_role', {
+    p_user_ids: userIds,
+    p_role: role,
+    p_grant: grant,
+  });
+  if (error) throw error;
+  return (data as number) ?? 0;
+}

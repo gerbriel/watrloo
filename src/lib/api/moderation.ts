@@ -129,3 +129,35 @@ export async function listBathroomsForModeration(limit = 100): Promise<Bathroom[
   if (error) throw error;
   return (data ?? []) as unknown as Bathroom[];
 }
+
+// --- Bulk operations (multi-select mass CRUD; each item audited) -------------
+
+export async function bulkSoftDeleteBathrooms(ids: string[], reason?: string): Promise<number> {
+  const { data, error } = await supabase.rpc('admin_bulk_soft_delete_bathrooms', {
+    p_ids: ids,
+    p_reason: reason ?? null,
+  });
+  if (error) throw error;
+  return (data as number) ?? 0;
+}
+
+export async function bulkRestoreBathrooms(ids: string[]): Promise<number> {
+  const { data, error } = await supabase.rpc('admin_bulk_restore_bathrooms', { p_ids: ids });
+  if (error) throw error;
+  return (data as number) ?? 0;
+}
+
+/** Add or remove one attribute (category/amenity/caution) across many bathrooms. */
+export async function bulkSetAttribute(
+  ids: string[],
+  slug: string,
+  add: boolean,
+): Promise<number> {
+  const { data, error } = await supabase.rpc('admin_bulk_set_attribute', {
+    p_ids: ids,
+    p_slug: slug,
+    p_add: add,
+  });
+  if (error) throw error;
+  return (data as number) ?? 0;
+}
