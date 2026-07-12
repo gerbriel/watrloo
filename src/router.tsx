@@ -32,6 +32,7 @@ import { AdminAppeals } from '@/pages/admin/AdminAppeals';
 import { AdminAttributes } from '@/pages/admin/AdminAttributes';
 import { AdminUsers } from '@/pages/admin/AdminUsers';
 import { AdminOrgs } from '@/pages/admin/AdminOrgs';
+import { AdminHome } from '@/pages/admin/AdminHome';
 import { ForBusiness } from '@/pages/ForBusiness';
 import { RequestAccess } from '@/pages/RequestAccess';
 import { BusinessDashboard } from '@/pages/business/BusinessDashboard';
@@ -183,7 +184,7 @@ export const router = createBrowserRouter([
           </RequireRole>
         ),
         children: [
-          { index: true, element: <Navigate to="reports" replace /> },
+          { index: true, element: <AdminHome /> },
           { path: 'reports', element: <AdminReports /> },
           { path: 'reviews', element: <AdminReviews /> },
           { path: 'bathrooms', element: <AdminBathrooms /> },
