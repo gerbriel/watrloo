@@ -20,8 +20,20 @@ import { cn } from '@/lib/cn';
  * succession, empty battalions dissolve), the page just tells the story.
  */
 
+/** PostgrestError isn't reliably an Error instance, so read .message off any
+ *  object — and translate the constraint violations a user can actually hit. */
 function errMsg(e: unknown): string {
-  return e instanceof Error ? e.message : 'Something went wrong.';
+  const msg =
+    typeof e === 'object' && e != null && 'message' in e
+      ? String((e as { message: unknown }).message)
+      : '';
+  if (msg.includes('battalions_name_key'))
+    return 'That banner is already raised — pick another name.';
+  if (msg.includes('battalions_name_check'))
+    return 'That name won’t fit on a banner: 3–40 characters using letters (accents welcome), numbers, spaces, apostrophes, hyphens and exclamation points.';
+  if (msg.includes('already enlisted'))
+    return 'You are already enlisted in a battalion — desert it first.';
+  return msg || 'Something went wrong.';
 }
 
 function MedalOrRank({ i }: { i: number }) {
@@ -165,8 +177,8 @@ function CreateForm({ onDone }: { onDone: () => void }) {
           className="mt-1 w-full rounded-lg border border-app bg-surface px-3 py-2 text-sm text-app"
         />
         <p className="mt-1 text-xs text-muted">
-          3–40 characters: letters, numbers, spaces, apostrophes, hyphens and
-          exclamation points.
+          3–40 characters: letters (accents welcome), numbers, spaces,
+          apostrophes, hyphens and exclamation points.
         </p>
       </div>
       <div>
