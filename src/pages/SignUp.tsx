@@ -1,6 +1,6 @@
 import type { FormEvent } from 'react';
 import { useState } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Field';
 import { useAuth } from '@/auth/AuthProvider';
@@ -30,6 +30,13 @@ function signUpErrorMessage(err: unknown): string {
 export function SignUp() {
   const { signUp, session } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // Where to land after signup (e.g. a unit invite link). In-app paths only,
+  // so a crafted link can't bounce a new account to another site.
+  const rawNext = searchParams.get('next');
+  const next = rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//')
+    ? rawNext
+    : '/explore';
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -47,7 +54,7 @@ export function SignUp() {
   const [sentTo, setSentTo] = useState<string | null>(null);
 
   // Signed in already (and not mid email-confirmation): nothing to do here.
-  if (session && !sentTo) return <Navigate to="/explore" replace />;
+  if (session && !sentTo) return <Navigate to={next} replace />;
 
   if (sentTo) {
     return (
@@ -124,7 +131,7 @@ export function SignUp() {
       // into the app. The check-your-email branch stays as a safety net in case
       // confirmation is ever turned back on.
       if (needsEmailConfirmation) setSentTo(email.trim());
-      else navigate('/explore', { replace: true });
+      else navigate(next, { replace: true });
     } catch (err) {
       setError(signUpErrorMessage(err));
     } finally {

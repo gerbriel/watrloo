@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
 import {
   battalionLeaderboard,
@@ -40,6 +40,37 @@ function errMsg(e: unknown): string {
   if (msg.includes('already enlisted'))
     return 'You are already enlisted in a battalion — desert it first.';
   return msg || 'Something went wrong.';
+}
+
+/** Share an invite link — the Web Share sheet where available (mobile),
+ *  clipboard copy elsewhere. The link lands friends on a recruitment banner
+ *  with a one-click enlist. */
+function RecruitButton({ unitId, unitName }: { unitId: string; unitName: string }) {
+  const [copied, setCopied] = useState(false);
+  const share = async () => {
+    const url = `${window.location.origin}/battalions?join=${unitId}`;
+    const data = {
+      title: `Join ${unitName} on Watrloo`,
+      text: `${unitName} needs you, soldier. Enlist and campaign with us on the porcelain front.`,
+      url,
+    };
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share(data);
+      } catch {
+        // user closed the share sheet — not an error
+      }
+    } else {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    }
+  };
+  return (
+    <Button variant="secondary" size="sm" onClick={() => void share()}>
+      {copied ? 'Invite link copied!' : '📣 Recruit friends'}
+    </Button>
+  );
 }
 
 function EchelonBadge({ level, name }: { level: number; name: string }) {
@@ -407,6 +438,8 @@ export function Battalions() {
   const { user, profile } = useAuth();
   const qc = useQueryClient();
   const [creating, setCreating] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const joinId = searchParams.get('join');
 
   const standings = useQuery({
     queryKey: ['battalionLeaderboard'],
@@ -458,6 +491,62 @@ export function Battalions() {
         </p>
       </header>
 
+      {(() => {
+        if (!joinId) return null;
+        const invited = standings.data?.find((b) => b.id === joinId);
+        if (!invited) return null;
+        const full = invited.member_count >= invited.member_cap;
+        const alreadyIn = mine.data?.battalion_id === invited.id;
+        const enlistedElsewhere = mine.data != null && !alreadyIn;
+        return (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-flush-500/50 bg-flush-600/5 px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold tracking-wide text-flush-600 uppercase">
+                You’ve been recruited
+              </p>
+              <p className="flex flex-wrap items-center gap-2 font-display font-bold text-app">
+                <span className="truncate">⚔️ {invited.name}</span>
+                <EchelonBadge level={invited.echelon} name={invited.echelon_name} />
+                <span className="text-xs font-normal text-muted">
+                  wants you in the ranks — {invited.member_count}/{invited.member_cap}{' '}
+                  soldiers, {invited.review_count} campaign
+                  {invited.review_count === 1 ? '' : 's'}
+                </span>
+              </p>
+            </div>
+            {alreadyIn ? (
+              <span className="text-sm text-muted">You already serve here. 🫡</span>
+            ) : enlistedElsewhere ? (
+              <span className="text-sm text-muted">
+                You already serve with another unit — desert it first.
+              </span>
+            ) : full ? (
+              <span className="text-sm text-amber-600">
+                Full strength — they need a promotion before they can take you.
+              </span>
+            ) : user ? (
+              <Button
+                size="sm"
+                loading={join.isPending}
+                onClick={() =>
+                  join.mutate(invited.id, {
+                    onSuccess: () => setSearchParams({}, { replace: true }),
+                  })
+                }
+              >
+                Answer the call
+              </Button>
+            ) : (
+              <Link
+                to={`/signup?next=${encodeURIComponent(`/battalions?join=${invited.id}`)}`}
+              >
+                <Button size="sm">Enlist to join them</Button>
+              </Link>
+            )}
+          </div>
+        );
+      })()}
+
       {user ? (
         <section className="flex flex-col gap-3">
           {mine.data ? (
@@ -489,24 +578,30 @@ export function Battalions() {
                     · {echelonCopy(myLevel).flavor}
                   </p>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-red-500 hover:bg-red-500/10"
-                  loading={leave.isPending}
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        mine.data?.role === 'commander'
-                          ? 'Desert your own unit? Command passes to the senior officer (or the unit dissolves if you are the last one out).'
-                          : 'Desert the unit?',
+                <div className="flex shrink-0 items-center gap-2">
+                  <RecruitButton
+                    unitId={mine.data.battalion_id}
+                    unitName={mine.data.battalion?.name ?? 'Our unit'}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-500 hover:bg-red-500/10"
+                    loading={leave.isPending}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          mine.data?.role === 'commander'
+                            ? 'Desert your own unit? Command passes to the senior officer (or the unit dissolves if you are the last one out).'
+                            : 'Desert the unit?',
+                        )
                       )
-                    )
-                      leave.mutate();
-                  }}
-                >
-                  Leave
-                </Button>
+                        leave.mutate();
+                    }}
+                  >
+                    Leave
+                  </Button>
+                </div>
               </div>
 
               {myStanding && echelons.data && (

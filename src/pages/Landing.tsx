@@ -4,6 +4,11 @@ import { Button } from '@/components/ui/Button';
 import { Stars } from '@/components/ui/Stars';
 import { AMENITY_LABELS } from '@/types/db';
 import { RANKS, RANKS_TAGLINE } from '@/lib/ranks';
+import { ECHELONS } from '@/lib/echelons';
+
+/** Roster caps per echelon, for the marketing ladder. The numbers the server
+ *  actually enforces live in the `battalion_echelons` table; keep in sync. */
+const ECHELON_CAPS = [6, 12, 24, 50, 100, 200, 400, 1000];
 
 /** Small inline icons — no icon dependency, no emoji. */
 function Icon({ path, className }: { path: string; className?: string }) {
@@ -334,6 +339,76 @@ export function Landing() {
           </Button>
           <span className="text-sm text-muted">
             Your first review earns a promotion on the spot. No boot camp, just bathrooms.
+          </span>
+        </div>
+      </section>
+
+      {/* Units — the Order of Battle */}
+      <section className="flex flex-col gap-10">
+        <div className="max-w-2xl">
+          <h2 className="font-display text-3xl font-bold tracking-tight text-app">
+            Don’t march alone. <span className="text-gradient">Muster a Squad.</span>
+          </h2>
+          <p className="mt-3 text-lg text-muted">
+            Rally your friends into a unit and climb the{' '}
+            <span className="font-medium text-app">real army ladder</span> together.
+            Every unit starts as a six-soldier Squad; recruit comrades and file
+            campaigns to earn promotions — each one grows your roster, opens
+            officer posts, and moves you up the unit standings. From six soldiers
+            to a Field Army a thousand strong.
+          </p>
+        </div>
+
+        <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {ECHELONS.map((e, i) => (
+            <li
+              key={e.name}
+              className={
+                e.level >= 7
+                  ? 'flex flex-col gap-1.5 rounded-xl border border-amber-500/40 bg-gradient-to-br from-amber-500/10 to-transparent p-4'
+                  : 'flex flex-col gap-1.5 rounded-xl border border-app bg-raised p-4'
+              }
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="font-display text-xs font-bold text-muted">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <span
+                  className={
+                    e.level >= 7
+                      ? 'rounded-full bg-amber-500/15 px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide text-amber-600'
+                      : 'rounded-full bg-sunken px-2 py-0.5 text-[0.65rem] font-medium uppercase tracking-wide text-muted'
+                  }
+                >
+                  up to {ECHELON_CAPS[i].toLocaleString()} soldiers
+                </span>
+              </div>
+              <p
+                className={
+                  e.level >= 7
+                    ? 'font-display text-base font-bold text-amber-600'
+                    : 'font-display text-base font-bold text-app'
+                }
+              >
+                {e.name}
+              </p>
+              <p className="text-[0.7rem] font-medium tracking-wide text-muted uppercase">
+                led by a {e.commanderTitle} = {e.commanderRealRank}
+              </p>
+              <p className="text-xs leading-relaxed text-muted">{e.flavor}</p>
+            </li>
+          ))}
+        </ol>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <Button size="lg" variant="primary" onClick={() => navigate('/signup')}>
+            Muster your Squad
+          </Button>
+          <Button size="lg" variant="secondary" onClick={() => navigate('/battalions')}>
+            See the unit standings
+          </Button>
+          <span className="text-sm text-muted">
+            Six friends and a dream. The Field Army builds itself one flush at a time.
           </span>
         </div>
       </section>
