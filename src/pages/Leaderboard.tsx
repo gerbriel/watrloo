@@ -80,9 +80,12 @@ export function Leaderboard() {
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-2">
-                    <span className="truncate font-medium text-app">
+                    <Link
+                      to={`/u/${encodeURIComponent(entry.username)}`}
+                      className="truncate font-medium text-app hover:underline"
+                    >
                       @{entry.username}
-                    </span>
+                    </Link>
                     <RankBadge reviewCount={entry.review_count} />
                     {isMe && (
                       <span className="rounded-full bg-flush-600/10 px-2 py-0.5 text-xs font-medium text-flush-600">
@@ -100,6 +103,20 @@ export function Leaderboard() {
           })}
         </ol>
       )}
+
+      <Link
+        to="/battalions"
+        className="flex items-center justify-between gap-3 rounded-xl border border-app bg-raised px-4 py-3 hover:bg-sunken"
+      >
+        <div>
+          <p className="font-display font-bold text-app">⚔️ Battalions</p>
+          <p className="text-xs text-muted">
+            Solo glory too lonely? Squad up — team standings pool every
+            member's campaigns.
+          </p>
+        </div>
+        <span className="shrink-0 text-xs text-muted">March →</span>
+      </Link>
 
       <p className="text-xs text-muted">
         Want on the board?{' '}

@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom';
 import { myAssignedBathrooms, softDeleteReview } from '@/lib/api/moderation';
 import type { AssignedBathroom } from '@/lib/api/moderation';
 import { listReviewsForBathroom } from '@/lib/api/reviews';
+import { getReviewResponse, respondToReview } from '@/lib/api/businesses';
+import { queryKeys } from '@/lib/queryClient';
 import { Stars } from '@/components/ui/Stars';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
@@ -18,6 +20,90 @@ import { cn } from '@/lib/cn';
 
 function fmt(iso: string): string {
   return new Date(iso).toLocaleDateString();
+}
+
+/**
+ * Reply to a review with the org's official voice. Moderators assigned to the
+ * claiming org (and admins) are authorized server-side by
+ * `business_respond_to_review`; if the bathroom has no verified claim, the
+ * database refuses and we surface that plainly. One response per review —
+ * posting again edits it.
+ */
+function OrgResponseComposer({ reviewId }: { reviewId: string }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [body, setBody] = useState('');
+
+  const existing = useQuery({
+    queryKey: queryKeys.reviewResponse(reviewId),
+    queryFn: () => getReviewResponse(reviewId),
+    enabled: open,
+  });
+
+  const post = useMutation({
+    mutationFn: () => respondToReview(reviewId, body),
+    onSuccess: () => {
+      setOpen(false);
+      void qc.invalidateQueries({ queryKey: queryKeys.reviewResponse(reviewId) });
+    },
+  });
+
+  if (!open) {
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => {
+          setOpen(true);
+          setBody('');
+        }}
+      >
+        Respond as the business
+      </Button>
+    );
+  }
+
+  const current = existing.data?.body ?? '';
+  return (
+    <form
+      className="flex flex-col gap-2 rounded-lg border border-app bg-sunken p-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        post.mutate();
+      }}
+    >
+      {current && !body && (
+        <p className="text-xs text-muted">
+          There's already an official response — posting replaces it:{' '}
+          <span className="italic">“{current}”</span>
+        </p>
+      )}
+      <textarea
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        required
+        rows={3}
+        maxLength={2000}
+        placeholder="Speak with the org's voice — this shows publicly under the review."
+        className="w-full rounded-lg border border-app bg-surface px-3 py-2 text-sm text-app"
+      />
+      {post.isError && (
+        <p className="text-xs text-red-500">
+          {post.error instanceof Error
+            ? post.error.message
+            : 'Could not post the response.'}
+        </p>
+      )}
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" size="sm" type="button" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+        <Button size="sm" type="submit" loading={post.isPending}>
+          {current ? 'Replace response' : 'Post response'}
+        </Button>
+      </div>
+    </form>
+  );
 }
 
 function AssignedCard({ b }: { b: AssignedBathroom }) {
@@ -136,6 +222,9 @@ function AssignedCard({ b }: { b: AssignedBathroom }) {
                     {r.body}
                   </p>
                 )}
+                <div className="flex flex-wrap gap-2">
+                  <OrgResponseComposer reviewId={r.id} />
+                </div>
               </div>
             );
           })}
