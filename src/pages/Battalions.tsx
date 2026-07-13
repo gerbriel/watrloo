@@ -8,14 +8,17 @@ import {
   createBattalion,
   joinBattalion,
   leaveBattalion,
+  assignBattalionReport,
   listDispatches,
   listEchelons,
   myBattalion,
+  reviewCountsFor,
   setBattalionOfficer,
   transferBattalionCommand,
 } from '@/lib/api/social';
 import type { BattalionStanding, EchelonRow, UnitRole } from '@/lib/api/social';
 import { echelonCopy, roleTitle } from '@/lib/echelons';
+import { RankBadge } from '@/components/review/RankBadge';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
 
@@ -114,16 +117,26 @@ function Roster({
   level,
   viewerId,
   viewerIsCommander,
+  officerNeed,
+  commanderNeed,
 }: {
   battalionId: string;
   level: number;
   viewerId?: string | null;
   viewerIsCommander?: boolean;
+  /** Qualification bars for this unit's echelon (from battalion_echelons). */
+  officerNeed?: number;
+  commanderNeed?: number;
 }) {
   const qc = useQueryClient();
   const { data, isPending } = useQuery({
     queryKey: ['battalionRoster', battalionId],
     queryFn: () => battalionRoster(battalionId),
+  });
+  const counts = useQuery({
+    queryKey: ['rosterCounts', battalionId, data?.length ?? 0],
+    queryFn: () => reviewCountsFor((data ?? []).map((m) => m.user_id)),
+    enabled: data != null && data.length > 0,
   });
 
   const refresh = () => {
@@ -139,60 +152,184 @@ function Roster({
     mutationFn: (userId: string) => transferBattalionCommand(userId),
     onSuccess: refresh,
   });
+  const assign = useMutation({
+    mutationFn: ({ userId, officerId }: { userId: string; officerId: string | null }) =>
+      assignBattalionReport(userId, officerId),
+    onSuccess: refresh,
+  });
 
   if (isPending) return <p className="text-sm text-muted">Mustering the roster…</p>;
 
+  const roster = data ?? [];
+  const commander = roster.find((m) => m.role === 'commander');
+  const officers = roster.filter((m) => m.role === 'officer');
+  const officerIds = new Set(officers.map((o) => o.user_id));
+  const soldiersOf = (officerId: string) =>
+    roster.filter((m) => m.role === 'member' && m.reports_to === officerId);
+  // Soldiers whose officer left/was dismissed fall back to the commander.
+  const directSoldiers = roster.filter(
+    (m) =>
+      m.role === 'member' &&
+      (m.reports_to == null || !officerIds.has(m.reports_to)),
+  );
+
+  // The chain ahead of the viewer, commander first.
+  const me = roster.find((m) => m.user_id === viewerId);
+  const myOfficer =
+    me?.role === 'member' && me.reports_to && officerIds.has(me.reports_to)
+      ? roster.find((m) => m.user_id === me.reports_to)
+      : undefined;
+
+  const row = (m: (typeof roster)[number]) => {
+    const have = counts.data?.get(m.user_id) ?? 0;
+    const officerOk = officerNeed == null || have >= officerNeed;
+    const commandOk = commanderNeed == null || have >= commanderNeed;
+    const isViewer = m.user_id === viewerId;
+    return (
+      <div
+        className={cn(
+          'flex flex-wrap items-center justify-between gap-2 rounded-lg border border-app px-3 py-1.5',
+          isViewer ? 'bg-flush-600/5 border-flush-500/40' : 'bg-surface',
+        )}
+      >
+        <span className="flex min-w-0 flex-wrap items-center gap-2">
+          <Link
+            to={`/u/${encodeURIComponent(m.profile?.username ?? '')}`}
+            className="truncate text-sm font-medium text-app hover:underline"
+          >
+            @{m.profile?.username ?? 'unknown'}
+          </Link>
+          <RankBadge reviewCount={have} />
+          <RoleChip level={level} role={m.role} />
+          {isViewer && (
+            <span className="rounded-full bg-flush-600/10 px-2 py-0.5 text-xs font-medium text-flush-600">
+              You
+            </span>
+          )}
+        </span>
+        {viewerIsCommander && !isViewer && (
+          <span className="flex flex-wrap items-center gap-1.5">
+            {m.role === 'member' && officers.length > 0 && (
+              <select
+                aria-label={`Detail @${m.profile?.username} to an officer`}
+                value={
+                  m.reports_to && officerIds.has(m.reports_to) ? m.reports_to : ''
+                }
+                disabled={assign.isPending}
+                onChange={(e) =>
+                  assign.mutate({
+                    userId: m.user_id,
+                    officerId: e.target.value || null,
+                  })
+                }
+                className="rounded-lg border border-app bg-surface px-2 py-1 text-xs text-app"
+              >
+                <option value="">Reports to you</option>
+                {officers.map((o) => (
+                  <option key={o.user_id} value={o.user_id}>
+                    Detail: @{o.profile?.username}
+                  </option>
+                ))}
+              </select>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={m.role !== 'officer' && !officerOk}
+              title={
+                m.role !== 'officer' && !officerOk
+                  ? `Needs ${officerNeed} campaigns for an officer post (has ${have})`
+                  : undefined
+              }
+              loading={officer.isPending && officer.variables?.userId === m.user_id}
+              onClick={() =>
+                officer.mutate({ userId: m.user_id, on: m.role !== 'officer' })
+              }
+            >
+              {m.role === 'officer' ? 'Dismiss officer' : 'Make officer'}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!commandOk}
+              title={
+                !commandOk
+                  ? `Command takes ${commanderNeed} campaigns (has ${have})`
+                  : undefined
+              }
+              loading={transfer.isPending && transfer.variables === m.user_id}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Hand command to @${m.profile?.username}? You'll step down to an officer post.`,
+                  )
+                )
+                  transfer.mutate(m.user_id);
+              }}
+            >
+              Transfer command
+            </Button>
+          </span>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-2">
-      <ul className="flex flex-col gap-1.5">
-        {data?.map((m) => (
-          <li
-            key={m.user_id}
-            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-app bg-surface px-3 py-1.5"
-          >
-            <span className="flex min-w-0 items-center gap-2">
-              <Link
-                to={`/u/${encodeURIComponent(m.profile?.username ?? '')}`}
-                className="truncate text-sm font-medium text-app hover:underline"
-              >
-                @{m.profile?.username ?? 'unknown'}
-              </Link>
-              <RoleChip level={level} role={m.role} />
-            </span>
-            {viewerIsCommander && m.user_id !== viewerId && (
-              <span className="flex flex-wrap gap-1.5">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  loading={officer.isPending && officer.variables?.userId === m.user_id}
-                  onClick={() =>
-                    officer.mutate({ userId: m.user_id, on: m.role !== 'officer' })
-                  }
-                >
-                  {m.role === 'officer' ? 'Dismiss officer' : 'Make officer'}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  loading={transfer.isPending && transfer.variables === m.user_id}
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        `Hand command to @${m.profile?.username}? You'll step down to an officer post.`,
-                      )
-                    )
-                      transfer.mutate(m.user_id);
-                  }}
-                >
-                  Transfer command
-                </Button>
+      {me && me.role !== 'commander' && commander && (
+        <p className="text-xs text-muted">
+          Your chain of command:{' '}
+          <span className="font-medium text-app">
+            ⭐ @{commander.profile?.username}
+          </span>
+          {myOfficer && (
+            <>
+              {' → '}
+              <span className="font-medium text-app">
+                ✦ @{myOfficer.profile?.username}
               </span>
+            </>
+          )}
+          {' → you'}
+        </p>
+      )}
+
+      <ul className="flex flex-col gap-1.5">
+        {commander && <li key={commander.user_id}>{row(commander)}</li>}
+        {officers.map((o) => (
+          <li key={o.user_id} className="flex flex-col gap-1.5">
+            <div className="border-l-2 border-app pl-3">{row(o)}</div>
+            {soldiersOf(o.user_id).length > 0 && (
+              <ul className="flex flex-col gap-1.5">
+                {soldiersOf(o.user_id).map((s) => (
+                  <li key={s.user_id} className="ml-3 border-l-2 border-app pl-6">
+                    {row(s)}
+                  </li>
+                ))}
+              </ul>
             )}
           </li>
         ))}
+        {directSoldiers.map((s) => (
+          <li key={s.user_id} className="border-l-2 border-app pl-3">
+            {row(s)}
+          </li>
+        ))}
       </ul>
-      {(officer.isError || transfer.isError) && (
-        <p className="text-xs text-red-500">{errMsg(officer.error ?? transfer.error)}</p>
+
+      {viewerIsCommander && officerNeed != null && (
+        <p className="text-xs text-muted">
+          Posts must be earned: officer posts at this echelon take{' '}
+          <span className="font-medium text-app">{officerNeed}</span> campaigns,
+          command takes <span className="font-medium text-app">{commanderNeed}</span>.
+          Soldiers can be detailed to an officer once one is appointed.
+        </p>
+      )}
+      {(officer.isError || transfer.isError || assign.isError) && (
+        <p className="text-xs text-red-500">
+          {errMsg(officer.error ?? transfer.error ?? assign.error)}
+        </p>
       )}
     </div>
   );
@@ -614,6 +751,14 @@ export function Battalions() {
                   level={myLevel}
                   viewerId={user.id}
                   viewerIsCommander={mine.data.role === 'commander'}
+                  officerNeed={
+                    echelons.data?.find((e) => e.level === myLevel)
+                      ?.officer_min_reviews
+                  }
+                  commanderNeed={
+                    echelons.data?.find((e) => e.level === myLevel)
+                      ?.commander_min_reviews
+                  }
                 />
               </div>
             </div>

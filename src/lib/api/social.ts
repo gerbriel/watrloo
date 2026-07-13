@@ -198,6 +198,10 @@ export interface EchelonRow {
   member_cap: number;
   min_members: number;
   min_campaigns: number;
+  /** Personal live-review counts required to HOLD a post at this echelon —
+   *  the sync point between the personal ladder and unit roles. */
+  officer_min_reviews: number;
+  commander_min_reviews: number;
 }
 
 export async function listEchelons(): Promise<EchelonRow[]> {
@@ -207,6 +211,24 @@ export async function listEchelons(): Promise<EchelonRow[]> {
     .order('level');
   if (error) throw error;
   return (data ?? []) as EchelonRow[];
+}
+
+/** Live review counts for a set of users, one round trip (roster badges,
+ *  qualification checks). Users with no reviews are simply absent. */
+export async function reviewCountsFor(
+  userIds: string[],
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (userIds.length === 0) return map;
+  const { data, error } = await supabase
+    .from('reviewer_stats')
+    .select('profile_id, review_count')
+    .in('profile_id', userIds);
+  if (error) throw error;
+  for (const row of (data ?? []) as { profile_id: string; review_count: number }[]) {
+    map.set(row.profile_id, row.review_count);
+  }
+  return map;
 }
 
 export interface UnitDispatch {
@@ -253,17 +275,33 @@ export interface BattalionMember {
   user_id: string;
   role: UnitRole;
   joined_at: string;
+  /** Officer this soldier is detailed to; null = reports to the commander. */
+  reports_to: string | null;
   profile: { id: string; username: string; avatar_url: string | null } | null;
 }
 
 export async function battalionRoster(battalionId: string): Promise<BattalionMember[]> {
   const { data, error } = await supabase
     .from('battalion_members')
-    .select('user_id, role, joined_at, profile:profiles(id, username, avatar_url)')
+    .select(
+      'user_id, role, joined_at, reports_to, profile:profiles(id, username, avatar_url)',
+    )
     .eq('battalion_id', battalionId)
     .order('joined_at');
   if (error) throw error;
   return (data ?? []) as unknown as BattalionMember[];
+}
+
+/** Commander only: detail a soldier to an officer (null → back to the commander). */
+export async function assignBattalionReport(
+  userId: string,
+  officerId: string | null,
+): Promise<void> {
+  const { error } = await supabase.rpc('assign_battalion_report', {
+    p_user_id: userId,
+    p_officer_id: officerId,
+  });
+  if (error) throw error;
 }
 
 export async function createBattalion(name: string, motto?: string): Promise<string> {

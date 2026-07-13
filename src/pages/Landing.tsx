@@ -357,6 +357,13 @@ export function Landing() {
             officer posts, and moves you up the unit standings. From six soldiers
             to a Field Army a thousand strong.
           </p>
+          <p className="mt-3 text-lg text-muted">
+            And the posts must be <span className="font-medium text-app">earned</span>:
+            your personal rank is your commission. Make{' '}
+            <span className="font-medium text-app">Loo-tenant</span> on your own
+            campaigns and you’re eligible to command a Platoon; the commander can
+            only hand posts to soldiers who hold the rank for the job.
+          </p>
         </div>
 
         <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
