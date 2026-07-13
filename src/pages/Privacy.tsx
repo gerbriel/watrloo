@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
  * app's data handling changes, update both this page and that document.
  */
 
-const EFFECTIVE_DATE = 'July 11, 2026';
+const EFFECTIVE_DATE = 'July 12, 2026';
 const CONTACT = 'hello@watrloo.com';
 
 function H2({ children }: { children: ReactNode }) {
@@ -175,10 +175,20 @@ export function Privacy() {
       />
       <P>
         <Strong>We do NOT collect</Strong> precise device geolocation via your
-        browser unless you explicitly use a “find me” feature on the map;
-        advertising identifiers; cross-site tracking data; data purchased from
-        data brokers; or special-category data beyond anything you might
-        voluntarily write in a review.
+        browser unless you explicitly use a “find me” feature on the map — and
+        even then, your position is used on your device to move the map and is
+        never sent to or stored on our servers; advertising identifiers;
+        cross-site tracking data; data purchased from data brokers; or
+        special-category data beyond anything you might voluntarily write in a
+        review.
+      </P>
+      <P>
+        <Strong>Directions are a hand-off, not a location feature of ours.</Strong>{' '}
+        Tapping “Directions” on a bathroom opens your maps app (Apple Maps or
+        Google Maps) with <Strong>only the bathroom’s address/coordinates</Strong>{' '}
+        — never your location, which we don’t have. Your maps app then uses
+        your live location under <Strong>its own</Strong> privacy policy, the
+        same as if you had typed the address into it yourself.
       </P>
 
       <H2>4. Why we use it, and our legal basis (GDPR)</H2>
@@ -215,6 +225,13 @@ export function Privacy() {
             loading the map. If no basemap host is configured, the map shows
             locations on a plain background and no third party receives your IP
             for the map.
+          </>,
+          <>
+            <Strong>Apple Maps / Google Maps (only if you tap “Directions”)</Strong>{' '}
+            — a link you choose to open, not a processor of ours. We pass them
+            the bathroom’s coordinates only; anything they learn about you
+            (including your location) is governed by their privacy policies,
+            not this one.
           </>,
         ]}
       />
