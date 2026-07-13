@@ -9,15 +9,20 @@ import {
   joinBattalion,
   leaveBattalion,
   assignBattalionReport,
+  cancelJoinRequest,
   listDispatches,
   listEchelons,
   myBattalion,
+  myJoinRequest,
   nameBattalionDetail,
+  requestJoinBattalion,
   reviewCountsFor,
   setBattalionOfficer,
+  setBattalionRecruitment,
   setDetailSecond,
   transferBattalionCommand,
 } from '@/lib/api/social';
+import { ApplicationsPanel, DisciplinePanel } from '@/components/battalion/UnitOps';
 import type { BattalionStanding, EchelonRow, UnitRole } from '@/lib/api/social';
 import { echelonCopy, roleTitle, secondTitle } from '@/lib/echelons';
 import { RankBadge } from '@/components/review/RankBadge';
@@ -534,14 +539,19 @@ function StandingCard({
   i,
   isMine,
   canJoin,
+  pendingHere,
   onJoin,
+  onRequest,
   joining,
 }: {
   b: BattalionStanding;
   i: number;
   isMine: boolean;
   canJoin: boolean;
+  /** The viewer's pending application is for this unit. */
+  pendingHere: boolean;
   onJoin: (id: string) => void;
+  onRequest: (id: string) => void;
   joining: boolean;
 }) {
   const [showRoster, setShowRoster] = useState(false);
@@ -591,19 +601,39 @@ function StandingCard({
           </span>
         </div>
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button variant="ghost" size="sm" onClick={() => setShowRoster((s) => !s)}>
           {showRoster ? 'Hide roster' : 'View roster'}
         </Button>
-        {canJoin && !full && (
-          <Button
-            variant="secondary"
-            size="sm"
-            loading={joining}
-            onClick={() => onJoin(b.id)}
-          >
-            Enlist here
-          </Button>
+        {pendingHere ? (
+          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600">
+            Application pending
+          </span>
+        ) : (
+          canJoin &&
+          !full &&
+          (b.recruitment === 'approval' ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={joining}
+              onClick={() => onRequest(b.id)}
+            >
+              Request to join
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={joining}
+              onClick={() => onJoin(b.id)}
+            >
+              Enlist here
+            </Button>
+          ))
+        )}
+        {b.recruitment === 'approval' && (
+          <span className="text-xs text-muted">By application</span>
         )}
       </div>
       {showRoster && <Roster battalionId={b.id} level={b.echelon} />}
@@ -726,6 +756,11 @@ export function Battalions() {
     queryFn: () => myBattalion(user!.id),
     enabled: user != null,
   });
+  const myRequest = useQuery({
+    queryKey: ['myJoinRequest', user?.id],
+    queryFn: myJoinRequest,
+    enabled: user != null && mine.data == null,
+  });
 
   const refreshAll = () => {
     void qc.invalidateQueries({ queryKey: ['battalionLeaderboard'] });
@@ -733,13 +768,35 @@ export function Battalions() {
     void qc.invalidateQueries({ queryKey: ['battalionRoster'] });
     void qc.invalidateQueries({ queryKey: ['battalionOf'] });
     void qc.invalidateQueries({ queryKey: ['unitDispatches'] });
+    void qc.invalidateQueries({ queryKey: ['myJoinRequest'] });
   };
 
   const join = useMutation({
     mutationFn: (id: string) => joinBattalion(id),
     onSuccess: refreshAll,
   });
+  const request = useMutation({
+    mutationFn: ({ id, message }: { id: string; message?: string }) =>
+      requestJoinBattalion(id, message),
+    onSuccess: refreshAll,
+  });
+  const cancelRequest = useMutation({
+    mutationFn: cancelJoinRequest,
+    onSuccess: refreshAll,
+  });
+  const recruitment = useMutation({
+    mutationFn: (mode: 'open' | 'approval') => setBattalionRecruitment(mode),
+    onSuccess: refreshAll,
+  });
   const leave = useMutation({ mutationFn: leaveBattalion, onSuccess: refreshAll });
+
+  const startRequest = (id: string) => {
+    const message = window.prompt(
+      'Add a note to your application (optional — say why they should take you):',
+    );
+    if (message === null) return;
+    request.mutate({ id, message: message.trim() || undefined });
+  };
 
   const myStanding = standings.data?.find((b) => b.id === mine.data?.battalion_id);
   const myLevel = mine.data?.battalion?.echelon ?? 1;
@@ -799,18 +856,30 @@ export function Battalions() {
               <span className="text-sm text-amber-600">
                 Full strength — they need a promotion before they can take you.
               </span>
+            ) : myRequest.data?.battalion_id === invited.id ? (
+              <span className="text-sm text-amber-600">Application pending</span>
             ) : user ? (
-              <Button
-                size="sm"
-                loading={join.isPending}
-                onClick={() =>
-                  join.mutate(invited.id, {
-                    onSuccess: () => setSearchParams({}, { replace: true }),
-                  })
-                }
-              >
-                Answer the call
-              </Button>
+              invited.recruitment === 'approval' ? (
+                <Button
+                  size="sm"
+                  loading={request.isPending}
+                  onClick={() => startRequest(invited.id)}
+                >
+                  Request to join
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  loading={join.isPending}
+                  onClick={() =>
+                    join.mutate(invited.id, {
+                      onSuccess: () => setSearchParams({}, { replace: true }),
+                    })
+                  }
+                >
+                  Answer the call
+                </Button>
+              )
             ) : (
               <Link
                 to={`/signup?next=${encodeURIComponent(`/battalions?join=${invited.id}`)}`}
@@ -883,6 +952,30 @@ export function Battalions() {
                 <PromotionProgress standing={myStanding} echelons={echelons.data} />
               )}
 
+              {mine.data.role === 'commander' && myStanding && (
+                <label className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                  Recruitment:
+                  <select
+                    value={myStanding.recruitment}
+                    disabled={recruitment.isPending}
+                    onChange={(e) =>
+                      recruitment.mutate(e.target.value as 'open' | 'approval')
+                    }
+                    className="rounded-lg border border-app bg-surface px-2 py-1 text-xs text-app"
+                  >
+                    <option value="open">Open — anyone can enlist</option>
+                    <option value="approval">By application — you approve recruits</option>
+                  </select>
+                </label>
+              )}
+
+              {(mine.data.role === 'commander' || mine.data.role === 'officer') && (
+                <>
+                  <ApplicationsPanel />
+                  <DisciplinePanel isCommander={mine.data.role === 'commander'} />
+                </>
+              )}
+
               <div className="border-t border-app pt-3">
                 <Roster
                   battalionId={mine.data.battalion_id}
@@ -913,6 +1006,24 @@ export function Battalions() {
                 refreshAll();
               }}
             />
+          ) : myRequest.data ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-raised px-4 py-3">
+              <p className="text-sm text-muted">
+                Your application to{' '}
+                <span className="font-medium text-app">
+                  ⚔️ {myRequest.data.battalion_name}
+                </span>{' '}
+                is with their brass.
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                loading={cancelRequest.isPending}
+                onClick={() => cancelRequest.mutate()}
+              >
+                Withdraw
+              </Button>
+            </div>
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-app bg-raised px-4 py-3">
               <p className="text-sm text-muted">
@@ -924,8 +1035,10 @@ export function Battalions() {
               </Button>
             </div>
           )}
-          {(join.isError || leave.isError) && (
-            <p className="text-sm text-red-500">{errMsg(join.error ?? leave.error)}</p>
+          {(join.isError || leave.isError || request.isError || recruitment.isError) && (
+            <p className="text-sm text-red-500">
+              {errMsg(join.error ?? leave.error ?? request.error ?? recruitment.error)}
+            </p>
           )}
         </section>
       ) : (
@@ -959,9 +1072,14 @@ export function Battalions() {
               b={b}
               i={i}
               isMine={mine.data?.battalion_id === b.id}
-              canJoin={canJoin}
+              canJoin={canJoin && myRequest.data == null}
+              pendingHere={myRequest.data?.battalion_id === b.id}
               onJoin={(id) => join.mutate(id)}
-              joining={join.isPending && join.variables === b.id}
+              onRequest={startRequest}
+              joining={
+                (join.isPending && join.variables === b.id) ||
+                (request.isPending && request.variables?.id === b.id)
+              }
             />
           ))}
         </ul>

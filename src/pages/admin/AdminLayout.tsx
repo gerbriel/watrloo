@@ -138,6 +138,13 @@ export function AdminLayout() {
             Signed in as @{profile?.username ?? '…'}. Every removal, restore,
             setting change, and role change here is written to the audit log.
           </p>
+          {viewAsAdmin && (
+            <p className="w-fit rounded-full bg-flush-600/10 px-3 py-1 text-xs font-medium text-flush-600">
+              Acting as <span className="font-bold">@watrloo</span> — this
+              console speaks with the official voice. The audit log keeps your
+              personal name.
+            </p>
+          )}
         </div>
         <div
           role="group"

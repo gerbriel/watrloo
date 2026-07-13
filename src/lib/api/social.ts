@@ -172,6 +172,7 @@ export interface BattalionStanding {
   motto: string | null;
   created_at: string;
   echelon: number;
+  recruitment: 'open' | 'approval';
   echelon_name: string;
   member_cap: number;
   member_count: number;
@@ -349,6 +350,173 @@ export async function joinBattalion(battalionId: string): Promise<void> {
 export async function leaveBattalion(): Promise<void> {
   const { error } = await supabase.rpc('leave_battalion');
   if (error) throw error;
+}
+
+// --- Recruitment: join requests -----------------------------------------------------
+
+export async function setBattalionRecruitment(
+  mode: 'open' | 'approval',
+): Promise<void> {
+  const { error } = await supabase.rpc('set_battalion_recruitment', { p_mode: mode });
+  if (error) throw error;
+}
+
+export async function requestJoinBattalion(
+  battalionId: string,
+  message?: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('request_join_battalion', {
+    p_battalion_id: battalionId,
+    p_message: message ? sanitizeLine(message, 280) : null,
+  });
+  if (error) throw error;
+}
+
+export async function cancelJoinRequest(): Promise<void> {
+  const { error } = await supabase.rpc('cancel_join_request');
+  if (error) throw error;
+}
+
+export interface MyJoinRequest {
+  id: string;
+  battalion_id: string;
+  battalion_name: string;
+  message: string | null;
+  created_at: string;
+}
+
+export async function myJoinRequest(): Promise<MyJoinRequest | null> {
+  const { data, error } = await supabase.rpc('my_join_request');
+  if (error) throw error;
+  return ((data as MyJoinRequest[] | null) ?? [])[0] ?? null;
+}
+
+export interface UnitJoinRequest {
+  id: string;
+  user_id: string;
+  username: string;
+  campaigns: number;
+  message: string | null;
+  created_at: string;
+}
+
+/** Pending applications for units where the caller is commander or officer. */
+export async function listUnitJoinRequests(): Promise<UnitJoinRequest[]> {
+  const { data, error } = await supabase.rpc('list_unit_join_requests');
+  if (error) throw error;
+  return (data as UnitJoinRequest[] | null) ?? [];
+}
+
+export async function decideJoinRequest(id: string, approve: boolean): Promise<void> {
+  const { error } = await supabase.rpc('decide_join_request', {
+    p_id: id,
+    p_approve: approve,
+  });
+  if (error) throw error;
+}
+
+// --- Chain-of-command moderation & discipline ----------------------------------------
+
+export interface FlaggedReview {
+  report_id: string;
+  reason: string;
+  reported_at: string;
+  review_id: string;
+  review_body: string | null;
+  review_rating: number;
+  author_id: string;
+  author_username: string;
+  bathroom_id: string;
+  bathroom_name: string;
+}
+
+/** Open reports on the caller's subordinates' live reviews. */
+export async function unitFlaggedReviews(): Promise<FlaggedReview[]> {
+  const { data, error } = await supabase.rpc('unit_flagged_reviews');
+  if (error) throw error;
+  return (data as FlaggedReview[] | null) ?? [];
+}
+
+/** A superior removes a subordinate's review (soft-delete, audited). */
+export async function unitRemoveReview(
+  reviewId: string,
+  reason?: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('unit_remove_review', {
+    p_review_id: reviewId,
+    p_reason: reason ? sanitizeLine(reason, 300) : null,
+  });
+  if (error) throw error;
+}
+
+export type DisciplineKind = 'flag' | 'ban_request';
+
+export async function fileUnitDiscipline(
+  subjectId: string,
+  kind: DisciplineKind,
+  reason: string,
+  reviewId?: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('file_unit_discipline', {
+    p_subject: subjectId,
+    p_kind: kind,
+    p_reason: sanitizeLine(reason, 500),
+    p_review_id: reviewId ?? null,
+  });
+  if (error) throw error;
+}
+
+export interface DisciplineItem {
+  id: string;
+  kind: DisciplineKind;
+  reason: string;
+  status: 'open' | 'resolved' | 'dismissed';
+  resolution: string | null;
+  created_at: string;
+  review_id: string | null;
+  subject_id: string;
+  subject_username: string;
+  raised_by: string;
+  raised_by_username: string;
+}
+
+/** Items you raised, items about your subordinates, and your own record. */
+export async function listUnitDiscipline(): Promise<DisciplineItem[]> {
+  const { data, error } = await supabase.rpc('list_unit_discipline');
+  if (error) throw error;
+  return (data as DisciplineItem[] | null) ?? [];
+}
+
+export async function resolveUnitDiscipline(
+  id: string,
+  status: 'resolved' | 'dismissed',
+  note?: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('resolve_unit_discipline', {
+    p_id: id,
+    p_status: status,
+    p_note: note ? sanitizeLine(note, 500) : null,
+  });
+  if (error) throw error;
+}
+
+export interface BanRequest {
+  id: string;
+  reason: string;
+  created_at: string;
+  review_id: string | null;
+  subject_id: string;
+  subject_username: string;
+  raised_by: string;
+  raised_by_username: string;
+  battalion_id: string;
+  battalion_name: string;
+}
+
+export async function adminListBanRequests(): Promise<BanRequest[]> {
+  const { data, error } = await supabase.rpc('admin_list_ban_requests');
+  if (error) throw error;
+  return (data as BanRequest[] | null) ?? [];
 }
 
 /** Commander only: appoint or dismiss an officer (posts grow with echelon). */

@@ -2,9 +2,87 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { listReports } from '@/lib/api/reports';
 import { resolveReport, softDeleteBathroom, softDeleteReview } from '@/lib/api/moderation';
+import { adminListBanRequests, resolveUnitDiscipline } from '@/lib/api/social';
 import { queryKeys } from '@/lib/queryClient';
 import type { ReportWithTarget } from '@/types/db';
 import { Button } from '@/components/ui/Button';
+
+/**
+ * Ban requests escalated by unit commanders through the chain of command.
+ * Deciding one here speaks as @watrloo. A "resolve" today documents the
+ * outcome (warning, role removal, content purge) — hard auth bans still need
+ * the service_role Edge Function on the backlog.
+ */
+function BanRequestQueue() {
+  const qc = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ['admin', 'banRequests'],
+    queryFn: adminListBanRequests,
+  });
+  const decide = useMutation({
+    mutationFn: ({ id, status, note }: { id: string; status: 'resolved' | 'dismissed'; note?: string }) =>
+      resolveUnitDiscipline(id, status, note),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['admin', 'banRequests'] }),
+  });
+
+  if (!data || data.length === 0) return null;
+  return (
+    <section className="flex flex-col gap-3 rounded-xl border border-red-500/40 bg-raised p-4">
+      <p className="text-sm font-medium text-app">
+        ⚠️ {data.length} ban request{data.length === 1 ? '' : 's'} from unit
+        commanders
+      </p>
+      <ul className="flex flex-col gap-2">
+        {data.map((b) => (
+          <li
+            key={b.id}
+            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-app bg-surface px-3 py-2"
+          >
+            <p className="min-w-0 text-sm text-app">
+              <Link
+                to={`/u/${encodeURIComponent(b.subject_username)}`}
+                className="font-medium hover:underline"
+              >
+                @{b.subject_username}
+              </Link>{' '}
+              <span className="text-muted">
+                — requested by @{b.raised_by_username} (⚔️ {b.battalion_name}):
+                “{b.reason}” · {fmt(b.created_at)}
+              </span>
+            </p>
+            <span className="flex gap-1.5">
+              <Button
+                variant="danger"
+                size="sm"
+                loading={decide.isPending && decide.variables?.id === b.id}
+                onClick={() => {
+                  const note = window.prompt(
+                    'Action taken (kept on the record, shown to the commander):',
+                  );
+                  if (note === null) return;
+                  decide.mutate({ id: b.id, status: 'resolved', note: note.trim() || undefined });
+                }}
+              >
+                Act on it
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  const note = window.prompt('Why is this dismissed? (optional)');
+                  if (note === null) return;
+                  decide.mutate({ id: b.id, status: 'dismissed', note: note.trim() || undefined });
+                }}
+              >
+                Dismiss
+              </Button>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 function fmt(iso: string): string {
   return new Date(iso).toLocaleString();
@@ -116,15 +194,20 @@ export function AdminReports() {
   }
   if (data.length === 0) {
     return (
-      <div className="rounded-xl border border-app bg-raised p-8 text-center">
-        <p className="font-medium text-app">No open reports</p>
-        <p className="mt-1 text-sm text-muted">The queue is clear. Nice.</p>
+      <div className="flex flex-col gap-4">
+        <BanRequestQueue />
+        <div className="rounded-xl border border-app bg-raised p-8 text-center">
+          <p className="font-medium text-app">No open reports</p>
+          <p className="mt-1 text-sm text-muted">The queue is clear. Nice.</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <ul className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4">
+      <BanRequestQueue />
+      <ul className="flex flex-col gap-4">
       {data.map((r) => {
         const targetGone = (r.review?.deleted_at ?? r.bathroom?.deleted_at) != null;
         const busy =
@@ -178,6 +261,7 @@ export function AdminReports() {
           </li>
         );
       })}
-    </ul>
+      </ul>
+    </div>
   );
 }
