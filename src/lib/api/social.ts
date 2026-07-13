@@ -162,13 +162,18 @@ export async function reviewsByAuthor(profileId: string): Promise<PublicReview[]
   return (data ?? []) as unknown as PublicReview[];
 }
 
-// --- Battalions --------------------------------------------------------------------
+// --- Battalions / the Order of Battle -----------------------------------------------
+
+export type UnitRole = 'commander' | 'officer' | 'member';
 
 export interface BattalionStanding {
   id: string;
   name: string;
   motto: string | null;
   created_at: string;
+  echelon: number;
+  echelon_name: string;
+  member_cap: number;
   member_count: number;
   review_count: number;
 }
@@ -177,6 +182,7 @@ export async function battalionLeaderboard(): Promise<BattalionStanding[]> {
   const { data, error } = await supabase
     .from('battalion_leaderboard')
     .select('*')
+    .order('echelon', { ascending: false })
     .order('review_count', { ascending: false })
     .order('member_count', { ascending: false })
     .limit(100);
@@ -184,16 +190,55 @@ export async function battalionLeaderboard(): Promise<BattalionStanding[]> {
   return (data ?? []) as BattalionStanding[];
 }
 
+/** The ladder itself (caps + promotion requirements), straight from the DB
+ *  so the client can never drift from what the server enforces. */
+export interface EchelonRow {
+  level: number;
+  name: string;
+  member_cap: number;
+  min_members: number;
+  min_campaigns: number;
+}
+
+export async function listEchelons(): Promise<EchelonRow[]> {
+  const { data, error } = await supabase
+    .from('battalion_echelons')
+    .select('*')
+    .order('level');
+  if (error) throw error;
+  return (data ?? []) as EchelonRow[];
+}
+
+export interface UnitDispatch {
+  id: string;
+  kind: 'founded' | 'promotion';
+  level: number;
+  note: string;
+  created_at: string;
+  battalion: { id: string; name: string } | null;
+}
+
+/** Recent unit achievements, army-wide — the "dispatches" feed. */
+export async function listDispatches(limit = 15): Promise<UnitDispatch[]> {
+  const { data, error } = await supabase
+    .from('battalion_achievements')
+    .select('id, kind, level, note, created_at, battalion:battalions(id, name)')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as unknown as UnitDispatch[];
+}
+
 export interface BattalionMembership {
   battalion_id: string;
-  role: 'leader' | 'member';
-  battalion: { id: string; name: string; motto: string | null } | null;
+  role: UnitRole;
+  battalion: { id: string; name: string; motto: string | null; echelon: number } | null;
 }
 
 export async function myBattalion(userId: string): Promise<BattalionMembership | null> {
   const { data, error } = await supabase
     .from('battalion_members')
-    .select('battalion_id, role, battalion:battalions(id, name, motto)')
+    .select('battalion_id, role, battalion:battalions(id, name, motto, echelon)')
     .eq('user_id', userId)
     .maybeSingle();
   if (error) throw error;
@@ -206,7 +251,7 @@ export async function battalionOf(userId: string): Promise<BattalionMembership |
 
 export interface BattalionMember {
   user_id: string;
-  role: 'leader' | 'member';
+  role: UnitRole;
   joined_at: string;
   profile: { id: string; username: string; avatar_url: string | null } | null;
 }
@@ -237,5 +282,25 @@ export async function joinBattalion(battalionId: string): Promise<void> {
 
 export async function leaveBattalion(): Promise<void> {
   const { error } = await supabase.rpc('leave_battalion');
+  if (error) throw error;
+}
+
+/** Commander only: appoint or dismiss an officer (posts grow with echelon). */
+export async function setBattalionOfficer(
+  userId: string,
+  officer: boolean,
+): Promise<void> {
+  const { error } = await supabase.rpc('set_battalion_officer', {
+    p_user_id: userId,
+    p_officer: officer,
+  });
+  if (error) throw error;
+}
+
+/** Commander only: hand off command; the old commander becomes an officer. */
+export async function transferBattalionCommand(userId: string): Promise<void> {
+  const { error } = await supabase.rpc('transfer_battalion_command', {
+    p_user_id: userId,
+  });
   if (error) throw error;
 }

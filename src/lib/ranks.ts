@@ -13,6 +13,8 @@
 
 export interface Rank {
   title: string;
+  /** The real rank (or historical title) this one puns on — shown 1:1. */
+  realRank: string;
   /** Live reviews required to hold the rank. */
   min: number;
   /** One-liner shown on promotion and on the profile's service record. */
@@ -24,60 +26,70 @@ export interface Rank {
 export const RANKS: readonly Rank[] = [
   {
     title: 'Recruit',
+    realRank: 'Recruit',
     min: 0,
     motto: 'Enlisted. The porcelain front awaits your first report.',
     tier: 'standard',
   },
   {
     title: 'Private',
+    realRank: 'Private',
     min: 1,
     motto: 'The army’s most fitting rank — your first stall probably was one.',
     tier: 'standard',
   },
   {
     title: 'The Little Corporal',
+    realRank: 'Corporal',
     min: 3,
     motto: 'Napoleon’s own nickname. He started small too.',
     tier: 'standard',
   },
   {
     title: 'Sergeant-at-Latrines',
+    realRank: 'Sergeant',
     min: 7,
     motto: 'Order in the ranks. Order in the stalls.',
     tier: 'standard',
   },
   {
     title: 'Loo-tenant',
+    realRank: 'Lieutenant',
     min: 15,
     motto: 'The rank this entire army was founded on.',
     tier: 'standard',
   },
   {
     title: 'Commode-ant',
+    realRank: 'Commandant',
     min: 30,
     motto: 'You command respect. Also commodes.',
     tier: 'standard',
   },
   {
     title: 'Flush Marshal',
+    realRank: 'Field Marshal',
     min: 50,
     motto: 'Discipline. Precision. Water pressure.',
     tier: 'gold',
   },
   {
     title: 'Emperor of the Throne',
+    realRank: 'Emperor of the French',
     min: 100,
     motto: 'Every throne in the city answers to you.',
     tier: 'gold',
   },
   {
     title: 'The Old Guard',
+    realRank: 'Imperial Old Guard',
     min: 500,
     motto: 'Beyond rank now. The Guard flushes; it never surrenders.',
     tier: 'gold',
   },
   {
     title: 'Victor of Watrloo',
+    realRank: 'Duke of Wellington',
     min: 1000,
     motto: 'Napoleon lost his. You’ve won a thousand.',
     tier: 'gold',

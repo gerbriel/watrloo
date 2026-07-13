@@ -8,6 +8,7 @@ import {
   reviewsByAuthor,
   setFollow,
 } from '@/lib/api/social';
+import { echelonCopy, roleTitle } from '@/lib/echelons';
 import { ServiceRecord } from '@/components/review/ServiceRecord';
 import { Stars } from '@/components/ui/Stars';
 import { Button } from '@/components/ui/Button';
@@ -158,7 +159,14 @@ export function PublicProfile() {
         >
           <div className="min-w-0">
             <p className="text-xs font-semibold tracking-wide text-muted uppercase">
-              {battalion.role === 'leader' ? 'Leads the battalion' : 'Serves with'}
+              {(() => {
+                const level = battalion.battalion.echelon;
+                const t = roleTitle(level, battalion.role);
+                const unit = echelonCopy(level).name;
+                return t
+                  ? `${t.title} (${t.realRank}) of the ${unit}`
+                  : `Serves with the ${unit}`;
+              })()}
             </p>
             <p className="truncate font-display font-bold text-app">
               ⚔️ {battalion.battalion.name}

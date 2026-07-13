@@ -320,6 +320,9 @@ export function Landing() {
               >
                 {rank.title}
               </p>
+              <p className="text-[0.7rem] font-medium tracking-wide text-muted uppercase">
+                = {rank.realRank}
+              </p>
               <p className="text-xs leading-relaxed text-muted">{rank.motto}</p>
             </li>
           ))}
