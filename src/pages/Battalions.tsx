@@ -12,12 +12,14 @@ import {
   listDispatches,
   listEchelons,
   myBattalion,
+  nameBattalionDetail,
   reviewCountsFor,
   setBattalionOfficer,
+  setDetailSecond,
   transferBattalionCommand,
 } from '@/lib/api/social';
 import type { BattalionStanding, EchelonRow, UnitRole } from '@/lib/api/social';
-import { echelonCopy, roleTitle } from '@/lib/echelons';
+import { echelonCopy, roleTitle, secondTitle } from '@/lib/echelons';
 import { RankBadge } from '@/components/review/RankBadge';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
@@ -119,6 +121,7 @@ function Roster({
   viewerIsCommander,
   officerNeed,
   commanderNeed,
+  secondNeed,
 }: {
   battalionId: string;
   level: number;
@@ -127,6 +130,8 @@ function Roster({
   /** Qualification bars for this unit's echelon (from battalion_echelons). */
   officerNeed?: number;
   commanderNeed?: number;
+  /** Bar for a detail's second-in-command (officer bar of the echelon below). */
+  secondNeed?: number;
 }) {
   const qc = useQueryClient();
   const { data, isPending } = useQuery({
@@ -157,6 +162,16 @@ function Roster({
       assignBattalionReport(userId, officerId),
     onSuccess: refresh,
   });
+  const rename = useMutation({
+    mutationFn: ({ officerId, name }: { officerId: string; name: string | null }) =>
+      nameBattalionDetail(officerId, name),
+    onSuccess: refresh,
+  });
+  const second = useMutation({
+    mutationFn: ({ userId, on }: { userId: string; on: boolean }) =>
+      setDetailSecond(userId, on),
+    onSuccess: refresh,
+  });
 
   if (isPending) return <p className="text-sm text-muted">Mustering the roster…</p>;
 
@@ -164,8 +179,11 @@ function Roster({
   const commander = roster.find((m) => m.role === 'commander');
   const officers = roster.filter((m) => m.role === 'officer');
   const officerIds = new Set(officers.map((o) => o.user_id));
+  // Seconds lead their detail's soldiers, so they list first.
   const soldiersOf = (officerId: string) =>
-    roster.filter((m) => m.role === 'member' && m.reports_to === officerId);
+    roster
+      .filter((m) => m.role === 'member' && m.reports_to === officerId)
+      .sort((a, b) => Number(b.is_second) - Number(a.is_second));
   // Soldiers whose officer left/was dismissed fall back to the commander.
   const directSoldiers = roster.filter(
     (m) =>
@@ -175,16 +193,31 @@ function Roster({
 
   // The chain ahead of the viewer, commander first.
   const me = roster.find((m) => m.user_id === viewerId);
+  const viewerIsOfficer = me?.role === 'officer';
   const myOfficer =
     me?.role === 'member' && me.reports_to && officerIds.has(me.reports_to)
       ? roster.find((m) => m.user_id === me.reports_to)
       : undefined;
+  const myDetailSecond =
+    myOfficer && !me?.is_second
+      ? soldiersOf(myOfficer.user_id).find((s) => s.is_second)
+      : undefined;
+  const isUnassigned = (m: (typeof roster)[number]) =>
+    m.role === 'member' && (m.reports_to == null || !officerIds.has(m.reports_to));
 
   const row = (m: (typeof roster)[number]) => {
     const have = counts.data?.get(m.user_id) ?? 0;
     const officerOk = officerNeed == null || have >= officerNeed;
     const commandOk = commanderNeed == null || have >= commanderNeed;
+    const secondOk = secondNeed == null || have >= secondNeed;
     const isViewer = m.user_id === viewerId;
+    // Second controls: the commander anywhere, or an officer within their own detail.
+    const canSetSecond =
+      m.role === 'member' &&
+      m.reports_to != null &&
+      officerIds.has(m.reports_to) &&
+      !isViewer &&
+      (viewerIsCommander || (viewerIsOfficer && m.reports_to === viewerId));
     return (
       <div
         className={cn(
@@ -201,6 +234,14 @@ function Roster({
           </Link>
           <RankBadge reviewCount={have} />
           <RoleChip level={level} role={m.role} />
+          {m.is_second && (
+            <span
+              title={`Second-in-command — real-army equivalent: ${secondTitle(level).realRank}`}
+              className="rounded-full bg-flush-600/10 px-2 py-0.5 text-xs font-medium text-flush-600"
+            >
+              ✦ Second — {secondTitle(level).title}
+            </span>
+          )}
           {isViewer && (
             <span className="rounded-full bg-flush-600/10 px-2 py-0.5 text-xs font-medium text-flush-600">
               You
@@ -271,6 +312,86 @@ function Roster({
             </Button>
           </span>
         )}
+        {(canSetSecond || (viewerIsOfficer && !isViewer && m.role === 'member')) && (
+          <span className="flex flex-wrap items-center gap-1.5">
+            {canSetSecond && (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!m.is_second && !secondOk}
+                title={
+                  !m.is_second && !secondOk
+                    ? `A second takes ${secondNeed} campaigns (has ${have})`
+                    : undefined
+                }
+                loading={second.isPending && second.variables?.userId === m.user_id}
+                onClick={() => second.mutate({ userId: m.user_id, on: !m.is_second })}
+              >
+                {m.is_second ? 'Dismiss second' : 'Make second'}
+              </Button>
+            )}
+            {viewerIsOfficer && m.reports_to === viewerId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                loading={assign.isPending && assign.variables?.userId === m.user_id}
+                onClick={() => assign.mutate({ userId: m.user_id, officerId: null })}
+              >
+                Release to commander
+              </Button>
+            )}
+            {viewerIsOfficer && isUnassigned(m) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                loading={assign.isPending && assign.variables?.userId === m.user_id}
+                onClick={() =>
+                  assign.mutate({ userId: m.user_id, officerId: viewerId ?? null })
+                }
+              >
+                Claim to my detail
+              </Button>
+            )}
+          </span>
+        )}
+      </div>
+    );
+  };
+
+  /** Sub-unit banner above an officer's block: name, strength, campaigns. */
+  const detailHeader = (o: (typeof roster)[number]) => {
+    const squad = soldiersOf(o.user_id);
+    const tally = [o, ...squad].reduce(
+      (sum, m) => sum + (counts.data?.get(m.user_id) ?? 0),
+      0,
+    );
+    const canRename = viewerIsCommander || o.user_id === viewerId;
+    return (
+      <div className="ml-3 flex flex-wrap items-center justify-between gap-2 pl-3">
+        <p className="text-xs font-semibold tracking-wide text-muted uppercase">
+          ⚑ {o.detail_name ?? `@${o.profile?.username}’s detail`}
+          <span className="ml-2 font-normal normal-case">
+            {squad.length + 1} soldier{squad.length === 0 ? '' : 's'} · {tally}{' '}
+            campaign{tally === 1 ? '' : 's'}
+          </span>
+        </p>
+        {canRename && (
+          <button
+            type="button"
+            disabled={rename.isPending}
+            onClick={() => {
+              const name = window.prompt(
+                'Name this detail (leave empty to clear):',
+                o.detail_name ?? '',
+              );
+              if (name === null) return;
+              rename.mutate({ officerId: o.user_id, name: name.trim() || null });
+            }}
+            className="text-xs text-muted underline hover:text-app"
+          >
+            {o.detail_name ? 'Rename' : 'Name this detail'}
+          </button>
+        )}
       </div>
     );
   };
@@ -289,6 +410,17 @@ function Roster({
               <span className="font-medium text-app">
                 ✦ @{myOfficer.profile?.username}
               </span>
+              {myOfficer.detail_name && (
+                <span className="text-muted"> ({myOfficer.detail_name})</span>
+              )}
+            </>
+          )}
+          {myDetailSecond && (
+            <>
+              {' → '}
+              <span className="font-medium text-app">
+                ✦ @{myDetailSecond.profile?.username}
+              </span>
             </>
           )}
           {' → you'}
@@ -299,6 +431,7 @@ function Roster({
         {commander && <li key={commander.user_id}>{row(commander)}</li>}
         {officers.map((o) => (
           <li key={o.user_id} className="flex flex-col gap-1.5">
+            {detailHeader(o)}
             <div className="border-l-2 border-app pl-3">{row(o)}</div>
             {soldiersOf(o.user_id).length > 0 && (
               <ul className="flex flex-col gap-1.5">
@@ -322,13 +455,18 @@ function Roster({
         <p className="text-xs text-muted">
           Posts must be earned: officer posts at this echelon take{' '}
           <span className="font-medium text-app">{officerNeed}</span> campaigns,
-          command takes <span className="font-medium text-app">{commanderNeed}</span>.
-          Soldiers can be detailed to an officer once one is appointed.
+          command takes <span className="font-medium text-app">{commanderNeed}</span>,
+          a detail's second takes{' '}
+          <span className="font-medium text-app">{secondNeed}</span>. Officers can
+          name their detail, appoint its second, claim unassigned soldiers, and
+          release their own.
         </p>
       )}
-      {(officer.isError || transfer.isError || assign.isError) && (
+      {(officer.isError || transfer.isError || assign.isError || rename.isError || second.isError) && (
         <p className="text-xs text-red-500">
-          {errMsg(officer.error ?? transfer.error ?? assign.error)}
+          {errMsg(
+            officer.error ?? transfer.error ?? assign.error ?? rename.error ?? second.error,
+          )}
         </p>
       )}
     </div>
@@ -758,6 +896,12 @@ export function Battalions() {
                   commanderNeed={
                     echelons.data?.find((e) => e.level === myLevel)
                       ?.commander_min_reviews
+                  }
+                  secondNeed={
+                    myLevel <= 1
+                      ? 1
+                      : echelons.data?.find((e) => e.level === myLevel - 1)
+                          ?.officer_min_reviews
                   }
                 />
               </div>

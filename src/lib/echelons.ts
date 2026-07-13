@@ -111,3 +111,10 @@ export function roleTitle(
   }
   return null; // plain soldiers show their personal reviewer rank instead
 }
+
+/** Title for a detail's second-in-command: the officer title one echelon
+ *  down — at Squad level, any Private can second. */
+export function secondTitle(level: number): { title: string; realRank: string } {
+  if (level <= 1) return { title: 'Private', realRank: 'Private' };
+  return roleTitle(level - 1, 'officer') ?? SQUAD_OFFICER;
+}

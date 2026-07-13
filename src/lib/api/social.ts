@@ -277,6 +277,10 @@ export interface BattalionMember {
   joined_at: string;
   /** Officer this soldier is detailed to; null = reports to the commander. */
   reports_to: string | null;
+  /** On officer rows: their detail's name (sub-unit banner). */
+  detail_name: string | null;
+  /** Second-in-command of their detail (one per detail). */
+  is_second: boolean;
   profile: { id: string; username: string; avatar_url: string | null } | null;
 }
 
@@ -284,12 +288,36 @@ export async function battalionRoster(battalionId: string): Promise<BattalionMem
   const { data, error } = await supabase
     .from('battalion_members')
     .select(
-      'user_id, role, joined_at, reports_to, profile:profiles(id, username, avatar_url)',
+      'user_id, role, joined_at, reports_to, detail_name, is_second, profile:profiles(id, username, avatar_url)',
     )
     .eq('battalion_id', battalionId)
     .order('joined_at');
   if (error) throw error;
   return (data ?? []) as unknown as BattalionMember[];
+}
+
+/** Commander or the detail's own officer: name the sub-unit (null clears). */
+export async function nameBattalionDetail(
+  officerId: string,
+  name: string | null,
+): Promise<void> {
+  const { error } = await supabase.rpc('name_battalion_detail', {
+    p_officer_id: officerId,
+    p_name: name ? sanitizeLine(name, 40) : null,
+  });
+  if (error) throw error;
+}
+
+/** Commander or the detail's own officer: appoint/dismiss the detail's second. */
+export async function setDetailSecond(
+  userId: string,
+  second: boolean,
+): Promise<void> {
+  const { error } = await supabase.rpc('set_detail_second', {
+    p_user_id: userId,
+    p_second: second,
+  });
+  if (error) throw error;
 }
 
 /** Commander only: detail a soldier to an officer (null → back to the commander). */
