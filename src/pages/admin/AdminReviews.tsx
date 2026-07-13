@@ -4,11 +4,13 @@ import type { ReviewPhoto } from '@/types/db';
 import {
   listReviewsForModeration,
   moderatorDeleteReviewPhoto,
+  myAssignedBathrooms,
   restoreReview,
   softDeleteReview,
 } from '@/lib/api/moderation';
 import { publicPhotoUrl } from '@/lib/api/photos';
 import { queryKeys } from '@/lib/queryClient';
+import { useAuth } from '@/auth/AuthProvider';
 import { Button } from '@/components/ui/Button';
 
 function fmt(iso: string): string {
@@ -17,9 +19,21 @@ function fmt(iso: string): string {
 
 export function AdminReviews() {
   const qc = useQueryClient();
+  const { isAdmin } = useAuth();
+
+  // Moderators are scoped (migration 20260714010000): their queue is the
+  // reviews on their assigned bathrooms, nothing else. Admins see everything.
+  const assigned = useQuery({
+    queryKey: ['assigned', 'bathrooms'],
+    queryFn: myAssignedBathrooms,
+    enabled: !isAdmin,
+  });
+  const scopeIds = isAdmin ? undefined : assigned.data?.map((b) => b.bathroom_id);
+
   const { data, isPending, isError, error, refetch } = useQuery({
-    queryKey: queryKeys.adminReviews(),
-    queryFn: () => listReviewsForModeration(100),
+    queryKey: [...queryKeys.adminReviews(), scopeIds ?? 'all'],
+    queryFn: () => listReviewsForModeration(100, scopeIds),
+    enabled: isAdmin || scopeIds != null,
   });
 
   const invalidate = () => {

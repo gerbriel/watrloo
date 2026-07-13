@@ -105,14 +105,26 @@ export interface ModeratedReview extends Review {
   photos: ReviewPhoto[];
 }
 
-export async function listReviewsForModeration(limit = 100): Promise<ModeratedReview[]> {
-  const { data, error } = await supabase
+/**
+ * `onlyBathroomIds` narrows a queue to the caller's jurisdiction. Moderators
+ * are SCOPED (migration 20260714010000): the database already refuses their
+ * actions and hides removed content outside their assignments, so this filter
+ * is about showing them an honest worklist, not enforcement. Admins pass
+ * nothing and see everything.
+ */
+export async function listReviewsForModeration(
+  limit = 100,
+  onlyBathroomIds?: string[],
+): Promise<ModeratedReview[]> {
+  let query = supabase
     .from('reviews')
     .select(
       '*, author:profiles!reviews_author_id_fkey(username), bathroom:bathrooms(id, name), photos:review_photos(*)',
     )
     .order('created_at', { ascending: false })
     .limit(limit);
+  if (onlyBathroomIds) query = query.in('bathroom_id', onlyBathroomIds);
+  const { data, error } = await query;
   if (error) throw error;
   return (data ?? []) as unknown as ModeratedReview[];
 }
@@ -120,12 +132,17 @@ export async function listReviewsForModeration(limit = 100): Promise<ModeratedRe
 const BATHROOM_COLUMNS =
   'id,name,address,lat,lng,description,wheelchair_accessible,gender_neutral,changing_table,requires_key,created_by,created_at,deleted_at,deleted_by';
 
-export async function listBathroomsForModeration(limit = 100): Promise<Bathroom[]> {
-  const { data, error } = await supabase
+export async function listBathroomsForModeration(
+  limit = 100,
+  onlyBathroomIds?: string[],
+): Promise<Bathroom[]> {
+  let query = supabase
     .from('bathrooms')
     .select(BATHROOM_COLUMNS)
     .order('created_at', { ascending: false })
     .limit(limit);
+  if (onlyBathroomIds) query = query.in('id', onlyBathroomIds);
+  const { data, error } = await query;
   if (error) throw error;
   return (data ?? []) as unknown as Bathroom[];
 }
@@ -195,4 +212,42 @@ export async function assignBathrooms(
   });
   if (error) throw error;
   return (data as number) ?? 0;
+}
+
+/**
+ * Admin: assign or unassign a moderator to whole orgs. An org assignment
+ * covers every bathroom the org holds a VERIFIED claim on — including claims
+ * verified later, with no re-assignment needed.
+ */
+export async function assignOrgs(
+  moderatorId: string,
+  businessIds: string[],
+  add: boolean,
+): Promise<number> {
+  const { data, error } = await supabase.rpc('admin_assign_orgs', {
+    p_moderator_id: moderatorId,
+    p_business_ids: businessIds,
+    p_add: add,
+  });
+  if (error) throw error;
+  return (data as number) ?? 0;
+}
+
+export interface OrgModerator {
+  moderator_id: string;
+  created_at: string;
+  moderator: Pick<Profile, 'username'> | null;
+}
+
+/** The moderators assigned to one org. Admin-only in practice (RLS). */
+export async function listOrgModerators(businessId: string): Promise<OrgModerator[]> {
+  const { data, error } = await supabase
+    .from('moderator_org_assignments')
+    .select(
+      'moderator_id, created_at, moderator:profiles!moderator_org_assignments_moderator_id_fkey(username)',
+    )
+    .eq('business_id', businessId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as unknown as OrgModerator[];
 }

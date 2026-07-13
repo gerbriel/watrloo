@@ -56,6 +56,25 @@ export async function setBathroomAttributes(
   if (error) throw error;
 }
 
+/**
+ * Community upkeep: any signed-in user flips ONE tag on a live bathroom
+ * (migration 20260714000000). Publishes immediately, logged server-side in
+ * attribute_edits — same reactive trust model as reviews. Wholesale rewrites
+ * stay with setBathroomAttributes and its stricter gate.
+ */
+export async function toggleBathroomAttribute(
+  bathroomId: string,
+  slug: string,
+  add: boolean,
+): Promise<void> {
+  const { error } = await supabase.rpc('toggle_bathroom_attribute', {
+    p_bathroom_id: bathroomId,
+    p_slug: slug,
+    p_add: add,
+  });
+  if (error) throw error;
+}
+
 /** Admin: create or update a taxonomy entry (audited). */
 export async function upsertAttribute(def: {
   slug: string;

@@ -9,6 +9,7 @@ import { Terms } from '@/pages/Terms';
 import { Campaigns } from '@/pages/business/Campaigns';
 import { AdminCampaigns } from '@/pages/admin/AdminCampaigns';
 import { NewBathroomPage } from '@/pages/NewBathroom';
+import { Leaderboard } from '@/pages/Leaderboard';
 import { BathroomDetail } from '@/pages/BathroomDetail';
 import { SignIn } from '@/pages/SignIn';
 import { SignUp } from '@/pages/SignUp';
@@ -90,6 +91,7 @@ export const router = createBrowserRouter([
       // Browse + Map are now one Explore view; old paths redirect (the signup
       // confirmation link and landing CTAs point at /browse).
       { path: '/explore', element: <Explore /> },
+      { path: '/leaderboard', element: <Leaderboard /> },
       { path: '/browse', element: <Navigate to="/explore" replace /> },
       { path: '/map', element: <Navigate to="/explore" replace /> },
       {

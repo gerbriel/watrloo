@@ -54,13 +54,11 @@ export function Header() {
           <span className="font-display text-lg font-bold tracking-tight">
             Watrloo
           </span>
-          <span className="hidden text-xs font-normal text-muted sm:inline">
-            · earn your stripes on the porcelain front
-          </span>
         </Link>
 
         <nav className="flex items-center gap-1 text-sm" aria-label="Primary">
           <NavItem to="/explore" label="Explore" />
+          <NavItem to="/leaderboard" label="Leaderboard" />
           {isBusinessMember ? (
             <NavItem to="/business/dashboard" label="My business" />
           ) : (

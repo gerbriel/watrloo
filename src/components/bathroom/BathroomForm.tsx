@@ -286,10 +286,11 @@ export function BathroomForm({
       </div>
 
       <Textarea
-        label="Description"
+        label="Description & access details"
         value={description}
         onChange={(e) => setDescription(e.target.value)}
-        hint="Optional. Anything worth knowing before you go."
+        hint="Optional. Where exactly is it, do you need a code or key, what are the hours?"
+        placeholder="e.g. Back of the cafe, past the counter. Door code 1234. Open until 9pm."
         maxLength={2000}
       />
 

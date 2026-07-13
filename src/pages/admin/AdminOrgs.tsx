@@ -6,6 +6,7 @@ import type { Business } from '@/types/db';
 import { createOrg, deleteOrg, listOrgs, searchUsers, setOrgMember } from '@/lib/api/adminDirectory';
 import type { DirectoryOrg } from '@/lib/api/adminDirectory';
 import { getProfileByUsername } from '@/lib/api/profiles';
+import { assignOrgs, listOrgModerators } from '@/lib/api/moderation';
 import { suspendBusiness } from '@/lib/api/growth';
 import { updateBusinessProfile } from '@/lib/api/businesses';
 import { Button } from '@/components/ui/Button';
@@ -364,6 +365,130 @@ function MembersPanel({ org }: { org: DirectoryOrg }) {
   );
 }
 
+/**
+ * Which moderators cover this org. Since scoped moderation (migration
+ * 20260714010000) this is jurisdiction, not bookkeeping: an org assignment is
+ * what lets a moderator act on every bathroom the org holds verified claims
+ * on. The RPC rejects usernames that don't hold the moderator role.
+ */
+function ModeratorsPanel({ org }: { org: DirectoryOrg }) {
+  const qc = useQueryClient();
+  const [username, setUsername] = useState('');
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const key = ['admin', 'orgModerators', org.id] as const;
+  const assigned = useQuery({
+    queryKey: key,
+    queryFn: () => listOrgModerators(org.id),
+  });
+
+  const mutate = useMutation({
+    mutationFn: ({ moderatorId, add }: { moderatorId: string; add: boolean }) =>
+      assignOrgs(moderatorId, [org.id], add),
+    onSuccess: () => {
+      setMsg(null);
+      void qc.invalidateQueries({ queryKey: key });
+    },
+    onError: (e) =>
+      setMsg(
+        errMsg(
+          e,
+          'Could not update the assignment. Is that account a moderator?',
+        ),
+      ),
+  });
+
+  async function addByUsername() {
+    setMsg(null);
+    const u = username.trim();
+    if (!u) return;
+    const profile = await getProfileByUsername(u).catch(() => null);
+    if (!profile) {
+      setMsg(`No account named @${u}.`);
+      return;
+    }
+    mutate.mutate({ moderatorId: profile.id, add: true });
+    setUsername('');
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-app bg-surface p-3">
+      <div>
+        <p className="text-sm font-medium text-app">Moderators</p>
+        <p className="text-xs text-muted">
+          Assigned moderators can act on every bathroom this org has verified
+          claims on — and nothing else.
+        </p>
+      </div>
+
+      {assigned.isPending && <p className="text-sm text-muted">Loading…</p>}
+      {assigned.isError && (
+        <p className="text-sm text-red-500">
+          {errMsg(assigned.error, 'Could not load moderators.')}
+        </p>
+      )}
+      {assigned.data && assigned.data.length === 0 && (
+        <p className="text-sm text-muted">No moderators assigned to this org.</p>
+      )}
+      {assigned.data && assigned.data.length > 0 && (
+        <ul className="flex flex-col gap-2">
+          {assigned.data.map((m) => {
+            const busy =
+              mutate.isPending && mutate.variables?.moderatorId === m.moderator_id;
+            return (
+              <li
+                key={m.moderator_id}
+                className="flex flex-wrap items-center justify-between gap-2"
+              >
+                <span className="text-sm text-app">
+                  <span className="font-medium">
+                    @{m.moderator?.username ?? 'unknown'}
+                  </span>{' '}
+                  <span className="text-xs text-muted">
+                    · since {fmt(m.created_at)}
+                  </span>
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-red-500 hover:bg-red-500/10"
+                  loading={busy}
+                  onClick={() =>
+                    mutate.mutate({ moderatorId: m.moderator_id, add: false })
+                  }
+                >
+                  Unassign
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <div className="flex flex-wrap items-end gap-2 border-t border-app pt-3">
+        <div className="min-w-40 flex-1">
+          <Input
+            label="Assign a moderator by username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="username"
+          />
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          loading={mutate.isPending}
+          disabled={!username.trim()}
+          onClick={() => void addByUsername()}
+        >
+          Assign
+        </Button>
+      </div>
+      {msg && <p className="text-sm text-red-500">{msg}</p>}
+    </div>
+  );
+}
+
 /** Create an org outright — for phone/email requests that never used the form. */
 function NewOrgForm({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false);
@@ -558,6 +683,7 @@ function OrgCard({
             onCancel={() => setExpanded(false)}
           />
           <MembersPanel org={org} />
+          <ModeratorsPanel org={org} />
           <div className="flex justify-end">
             <Button
               variant="danger"

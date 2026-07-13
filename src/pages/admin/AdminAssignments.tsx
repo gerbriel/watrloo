@@ -9,9 +9,11 @@ import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
 
 /**
- * The moderator's worklist: bathrooms an admin assigned to them, with the
- * reviews and open reports attached. Assignment focuses attention — the
- * moderation powers themselves are the same sitewide ones, always audited.
+ * The moderator's worklist: bathrooms an admin assigned to them (directly, or
+ * through an org whose verified claims cover them), with the reviews and open
+ * reports attached. Since scoped moderation (migration 20260714010000) this
+ * list IS the moderator's jurisdiction — outside it the database refuses
+ * their actions. Always audited.
  */
 
 function fmt(iso: string): string {
@@ -168,8 +170,9 @@ export function AdminAssignments() {
       <div className="rounded-xl border border-app bg-raised p-8 text-center">
         <p className="font-medium text-app">No bathrooms assigned to you yet</p>
         <p className="mt-1 text-sm text-muted">
-          An admin can assign you bathrooms from the Bathrooms console — they'll
-          show up here with their reviews and reports.
+          Moderation is scoped: you can act only on bathrooms an admin assigns
+          to you (directly, or via an org). Ask an admin to assign you from the
+          Bathrooms or Orgs console — your beat will show up here.
         </p>
       </div>
     );

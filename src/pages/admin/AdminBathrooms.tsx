@@ -10,7 +10,7 @@ import {
   softDeleteBathroom,
 } from '@/lib/api/moderation';
 import { listAttributeDefs } from '@/lib/api/attributes';
-import { assignBathrooms } from '@/lib/api/moderation';
+import { assignBathrooms, myAssignedBathrooms } from '@/lib/api/moderation';
 import { searchUsers } from '@/lib/api/adminDirectory';
 import { useAuth } from '@/auth/AuthProvider';
 import { decideBathroomEdit, listEditRequests } from '@/lib/api/contributions';
@@ -398,9 +398,21 @@ function AdminBathroomRow({
 
 export function AdminBathrooms() {
   const qc = useQueryClient();
+  const { isAdmin } = useAuth();
+
+  // Moderators are scoped (migration 20260714010000): this console shows only
+  // their assigned bathrooms. Admins see the full directory.
+  const assigned = useQuery({
+    queryKey: ['assigned', 'bathrooms'],
+    queryFn: myAssignedBathrooms,
+    enabled: !isAdmin,
+  });
+  const scopeIds = isAdmin ? undefined : assigned.data?.map((b) => b.bathroom_id);
+
   const { data, isPending, isError, error, refetch } = useQuery({
-    queryKey: queryKeys.adminBathrooms(),
-    queryFn: () => listBathroomsForModeration(100),
+    queryKey: [...queryKeys.adminBathrooms(), scopeIds ?? 'all'],
+    queryFn: () => listBathroomsForModeration(100, scopeIds),
+    enabled: isAdmin || scopeIds != null,
   });
   const attrDefs = useQuery({
     queryKey: ['attributeDefs', true],
@@ -412,7 +424,6 @@ export function AdminBathrooms() {
   const [bulkMsg, setBulkMsg] = useState<string | null>(null);
   const [bulkSlug, setBulkSlug] = useState('');
   const [bulkModerator, setBulkModerator] = useState('');
-  const { isAdmin } = useAuth();
   const moderators = useQuery({
     queryKey: ['admin', 'users', 'moderators'],
     queryFn: () => searchUsers({ role: 'moderator', limit: 200 }),

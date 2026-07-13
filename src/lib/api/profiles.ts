@@ -29,6 +29,26 @@ export async function getReviewerStats(profileId: string): Promise<ReviewerStats
   );
 }
 
+/** One row of the public leaderboard, from the `leaderboard` view. */
+export interface LeaderboardEntry {
+  profile_id: string;
+  username: string;
+  avatar_url: string | null;
+  review_count: number;
+}
+
+/** Top reviewers by live review count — the Hall of Marshals. */
+export async function listLeaderboard(limit = 25): Promise<LeaderboardEntry[]> {
+  const { data, error } = await supabase
+    .from('leaderboard')
+    .select('*')
+    .order('review_count', { ascending: false })
+    .order('username', { ascending: true })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as LeaderboardEntry[];
+}
+
 /** Look up a profile by exact username. Used by the admin role-granting form. */
 export async function getProfileByUsername(username: string): Promise<Profile | null> {
   const { data, error } = await supabase

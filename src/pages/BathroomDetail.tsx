@@ -9,6 +9,7 @@ import { Stars } from '@/components/ui/Stars';
 import { Button } from '@/components/ui/Button';
 import { AmenityBadges } from '@/components/bathroom/AmenityBadges';
 import { AttributeBadges } from '@/components/bathroom/AttributeBadges';
+import { AttributeEditor } from '@/components/bathroom/AttributeEditor';
 import { ReviewForm } from '@/components/review/ReviewForm';
 import { ReviewList } from '@/components/review/ReviewList';
 import { ReportButton } from '@/components/moderation/ReportButton';
@@ -163,6 +164,7 @@ export function BathroomDetail() {
 
         <AmenityBadges amenities={bathroom} />
         <AttributeBadges bathroomId={bathroom.id} />
+        <AttributeEditor bathroomId={bathroom.id} />
 
         <div className="flex flex-wrap items-center justify-between gap-2">
           <ReportButton target={{ bathroom_id: bathroom.id }} />

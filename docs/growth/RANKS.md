@@ -43,12 +43,17 @@ the gold tier, which gets a dressed-up badge.
   logged — N more to make ⟨rank⟩", or a gold promotion banner when a
   threshold is crossed. Edits are upserts and stay silent.
 
+## Shipped after v1
+
+- **Leaderboard** ("Hall of Marshals", `/leaderboard`, migration
+  `20260714000000`) — public top-25 by live review count via the
+  `leaderboard` view. Usernames + counts only (both already public on review
+  cards); PII stays in `profile_private`. The viewer's own row is highlighted.
+
 ## Deliberately not in v1
 
 - **Streaks** — punishing lapses fits a language app, not a bathroom app; a
   "weeks on campaign" streak could come later if retention data wants it.
-- **Leaderboard** ("Hall of Marshals") — needs a top-N query on
-  `reviewer_stats` and an opt-out; good candidate for round 2.
 - **Medals** for specific feats (first photo, first review in a neighborhood,
   reviewing during Oktoberfest…) — the fun ceiling is high, the schema cost
   is a `medals` table; later.
