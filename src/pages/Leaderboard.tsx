@@ -109,10 +109,10 @@ export function Leaderboard() {
         className="flex items-center justify-between gap-3 rounded-xl border border-app bg-raised px-4 py-3 hover:bg-sunken"
       >
         <div>
-          <p className="font-display font-bold text-app">⚔️ Battalions</p>
+          <p className="font-display font-bold text-app">⚔️ Squads</p>
           <p className="text-xs text-muted">
-            Solo glory too lonely? Squad up — team standings pool every
-            member's campaigns.
+            Solo glory too lonely? Muster a Squad and climb from six soldiers
+            to a Field Army — team standings pool every member's campaigns.
           </p>
         </div>
         <span className="shrink-0 text-xs text-muted">March →</span>
