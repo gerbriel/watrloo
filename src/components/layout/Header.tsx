@@ -59,10 +59,8 @@ export function Header() {
         <nav className="flex items-center gap-1 text-sm" aria-label="Primary">
           <NavItem to="/explore" label="Explore" />
           <NavItem to="/leaderboard" label="Leaderboard" />
-          {isBusinessMember ? (
+          {isBusinessMember && (
             <NavItem to="/business/dashboard" label="My business" />
-          ) : (
-            <NavItem to="/business" label="For business" />
           )}
           {isModerator && <NavItem to="/admin" label="Admin" />}
         </nav>

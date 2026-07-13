@@ -13,6 +13,9 @@ export function Layout() {
           <Link to="/explore" className="hover:text-app">
             Explore
           </Link>
+          <Link to="/business" className="hover:text-app">
+            For business
+          </Link>
           <Link to="/privacy" className="hover:text-app">
             Privacy
           </Link>

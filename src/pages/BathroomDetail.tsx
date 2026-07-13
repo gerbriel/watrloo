@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { AmenityBadges } from '@/components/bathroom/AmenityBadges';
 import { AttributeBadges } from '@/components/bathroom/AttributeBadges';
 import { AttributeEditor } from '@/components/bathroom/AttributeEditor';
-import { directionsUrl } from '@/lib/directions';
+import { DirectionsButton } from '@/components/bathroom/DirectionsButton';
 import { ReviewForm } from '@/components/review/ReviewForm';
 import { ReviewList } from '@/components/review/ReviewList';
 import { ReportButton } from '@/components/moderation/ReportButton';
@@ -141,18 +141,7 @@ export function BathroomDetail() {
             <h1 className="text-2xl font-bold text-app">{bathroom.name}</h1>
             <p className="mt-1 text-sm text-muted">{bathroom.address}</p>
           </div>
-          {/* Destination-only hand-off: the maps app supplies the user's own
-              location, so no geolocation prompt and nothing for us to store. */}
-          <a
-            href={directionsUrl(bathroom.lat, bathroom.lng, bathroom.name)}
-            target="_blank"
-            rel="noreferrer"
-            className="shrink-0"
-          >
-            <Button size="sm" variant="primary">
-              Directions
-            </Button>
-          </a>
+          <DirectionsButton lat={bathroom.lat} lng={bathroom.lng} />
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
