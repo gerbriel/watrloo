@@ -11,6 +11,10 @@
  * Officers lead the sub-units, so an echelon's officer title is simply the
  * commander title of the echelon below — a Battalion's officers are its
  * Company commanders, exactly like the real org chart.
+ *
+ * The titles are IDENTICAL to the personal ladder in `ranks.ts`, and the
+ * qualification bars in `battalion_echelons` sit exactly on those ranks'
+ * thresholds: hold the rank, hold the commission.
  */
 
 export interface EchelonCopy {
@@ -26,14 +30,14 @@ export const ECHELONS: readonly EchelonCopy[] = [
   {
     level: 1,
     name: 'Squad',
-    commanderTitle: 'Stall Sergeant',
+    commanderTitle: 'Sergeant-at-Latrines',
     commanderRealRank: 'Sergeant',
     flavor: 'Six brave souls and one shared plunger.',
   },
   {
     level: 2,
     name: 'Platoon',
-    commanderTitle: 'Second Loo-tenant',
+    commanderTitle: 'Loo-tenant',
     commanderRealRank: 'Second Lieutenant',
     flavor: 'Big enough to hold formation — and the door.',
   },
@@ -89,7 +93,7 @@ export function echelonCopy(level: number): EchelonCopy {
 export type UnitRole = 'commander' | 'officer' | 'member';
 
 /** Officer title for a Squad, the one echelon with no sub-unit below it. */
-const SQUAD_OFFICER = { title: 'Corporal Clog', realRank: 'Corporal' };
+const SQUAD_OFFICER = { title: 'The Little Corporal', realRank: 'Corporal' };
 
 /** The title a member holds, given their unit's echelon. */
 export function roleTitle(
